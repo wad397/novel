@@ -67,19 +67,19 @@ button { font: inherit; color: inherit; cursor: pointer; }
 #text::placeholder { color: var(--caption); opacity: .7; }
 
 /* 설명판: 미술관 벽의 작품 캡션처럼, 화면 오른쪽 가운데에 두 장 */
-/* 화면 오른쪽 가운데에 고정. 오른쪽 위치는 가운데 정렬된 원고+설명판 묶음의 오른쪽 끝에 맞춘다 */
-.label-in { position: fixed; z-index: 1; top: 50%; transform: translateY(-50%); width: 15rem; right: max(20px, calc(50% - (44rem + 40px + 15rem) / 2)); max-height: calc(100dvh - 180px); display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 10px; }
+/* 화면 오른쪽 위에 고정. 원고 종이 윗선에 맞추고, 오른쪽 위치는 원고+설명판 묶음의 오른쪽 끝에 맞춘다 */
+.label-in { position: fixed; z-index: 1; top: 48px; width: 15rem; right: max(20px, calc(50% - (44rem + 40px + 15rem) / 2)); max-height: calc(100dvh - 48px - 110px); display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 10px; }
 .label-in > .memo-card { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
 .plaque { position: relative; padding: 14px 16px 16px; background: var(--plaque); box-shadow: 0 1px 2px rgb(0 0 0 / .14); font-size: .8rem; line-height: 1.55; }
-.plaque .place { font-size: .75rem; margin-bottom: 2px; }
+.plaque .place { font-size: .75rem; margin-bottom: 2px; max-width: calc(100% - 2.6rem); overflow-wrap: anywhere; }
 .label h1 { margin: 2px 0 10px; padding-right: 2.6rem; font: 600 1.05rem/1.4 var(--sign); letter-spacing: 0; overflow-wrap: anywhere; }
-.label .no { position: absolute; right: 14px; bottom: 12px; font: 500 1.4rem/1 var(--sign); font-variant-numeric: tabular-nums; }
+.label .no { position: absolute; top: 12px; right: 14px; font: 500 1.4rem/1 var(--sign); font-variant-numeric: tabular-nums; }
 .status { display: flex; align-items: center; gap: 8px; color: var(--caption); }
 .status::before { content: ""; flex: none; width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--dot); }
 .status[data-state="saved"]::before { background: var(--dot); }
 .status[data-state="saving"]::before { background: linear-gradient(90deg, var(--dot) 50%, transparent 50%); }
 .status[data-state="failed"] { color: var(--dot); }
-.tools { display: flex; flex-wrap: wrap; gap: 0 14px; margin-top: 8px; padding-right: 2.6rem; }
+.tools { display: flex; flex-wrap: wrap; gap: 0 14px; margin-top: 8px; }
 .tools .link { font-size: .78rem; }
 .memo-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; font-weight: 600; }
 .memo-head a { font-weight: 400; font-size: .75rem; color: var(--caption); text-underline-offset: 3px; }

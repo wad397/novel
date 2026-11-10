@@ -156,7 +156,9 @@ async function showNovel(folderId) {
     const title = prompt('회차 제목');
     if (title === null) return;
     try {
-      const name = episodeFileName(nextEpisodeNumber(files.map((f) => f.name)), sanitizeTitle(title));
+      // 다른 기기에서 그사이 회차를 추가했을 수 있어서 만들기 직전에 다시 확인한다
+      const latest = await drive.listChildren(folderId);
+      const name = episodeFileName(nextEpisodeNumber(latest.map((f) => f.name)), sanitizeTitle(title));
       const f = await drive.createText(name, folderId, '');
       location.hash = `#/e/${folderId}/${f.id}`;
     } catch (e) { failed(e, () => showNovel(folderId)); }
