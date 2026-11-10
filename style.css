@@ -67,14 +67,40 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .label { position: sticky; top: 48px; display: grid; gap: 4px; padding-top: 4px; font-size: .9rem; }
 .label .no { color: var(--caption); font-variant-numeric: tabular-nums; }
 .label h1 { font-size: 1.35rem; margin-bottom: 14px; overflow-wrap: anywhere; }
-.count { font-variant-numeric: tabular-nums; }
-.count span { color: var(--caption); }
 .status { display: flex; align-items: center; gap: 8px; margin-top: 14px; color: var(--caption); }
 .status::before { content: ""; flex: none; width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--dot); }
 .status[data-state="saved"]::before { background: var(--dot); }
 .status[data-state="saving"]::before { background: linear-gradient(90deg, var(--dot) 50%, transparent 50%); }
 .status[data-state="failed"] { color: var(--dot); }
 .tools { display: flex; gap: 16px; margin-top: 18px; }
+
+/* 오른쪽 아래 분량 칸 */
+.counter { position: fixed; z-index: 3; right: max(20px, env(safe-area-inset-right)); bottom: max(20px, env(safe-area-inset-bottom)); display: grid; justify-items: end; gap: 8px; }
+.counter-face { display: grid; gap: 7px; min-width: 10rem; padding: 10px 14px 11px; background: var(--sheet); border: 1px solid var(--edge); border-radius: 2px; text-align: left; font-size: .9rem; font-variant-numeric: tabular-nums; }
+.counter-face:hover, .counter-face[aria-expanded="true"] { border-color: var(--caption); }
+.counter-bar { height: 2px; background: var(--edge); }
+.counter-bar i { display: block; height: 100%; width: 0; background: var(--ink); transition: width .3s; }
+.counter-face.reached .counter-bar i { background: var(--dot); }
+.counter-cheer { font-family: var(--text); font-size: .95rem; }
+.counter-cheer:empty { display: none; }
+.counter-panel { width: min(20rem, calc(100vw - 40px)); display: grid; gap: 16px; padding: 16px 18px; background: var(--sheet); border: 1px solid var(--edge); border-radius: 2px; font-size: .9rem; }
+.counter-panel[hidden] { display: none; }
+.counter-panel fieldset { display: grid; gap: 2px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.counter-panel legend { padding: 0; margin-bottom: 4px; color: var(--caption); font-size: .8rem; }
+.counter-panel .units { grid-template-columns: 1fr 1fr; }
+.counter-panel label { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 34px; cursor: pointer; }
+.counter-panel small { color: var(--caption); font-size: .8rem; }
+.counter-panel input[type="radio"], .counter-panel input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--ink); }
+.counter-panel .goal input { width: 6.5em; padding: 6px 8px; border: 1px solid var(--edge); border-radius: 2px; background: var(--wall); color: var(--ink); font: inherit; font-variant-numeric: tabular-nums; }
+.confetti { position: absolute; right: 5rem; bottom: 1.5rem; pointer-events: none; }
+.confetti span { position: absolute; width: 5px; height: 9px; background: var(--ink); opacity: 0; animation: confetti 1.3s cubic-bezier(.2,.7,.4,1) forwards; }
+.confetti span:nth-child(3n) { background: var(--dot); }
+.confetti span:nth-child(3n+1) { background: var(--caption); }
+@keyframes confetti {
+  0% { opacity: 1; transform: translate(0, 0) rotate(0); }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--x), calc(var(--y) + 40px)) rotate(var(--r)); }
+}
 
 /* 로그인 만료 알림 */
 #login-banner { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px 16px; padding: 10px max(20px, env(safe-area-inset-right)); background: var(--ink); color: var(--wall); font-size: .9rem; }
@@ -89,8 +115,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .label { position: static; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 0; }
   .label .place, .label .no, .label h1 { grid-column: 1 / -1; }
   .label h1 { margin-bottom: 6px; }
-  .count br { display: none; }
-  .count span { margin-left: 6px; }
   .status { margin-top: 0; }
   .tools { grid-column: 1 / -1; margin-top: 4px; }
   .sheet { padding: 28px 22px; min-height: 70vh; }

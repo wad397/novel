@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
-  countChars, isConflict, escapeQuery, sanitizeTitle,
+  countText, isConflict, escapeQuery, sanitizeTitle,
 } from '../logic.js';
 
 test('회차 파일 이름', () => {
@@ -23,9 +23,23 @@ test('충돌 사본 이름', () => {
   assert.equal(conflictFileName('설정.md', new Date(2026, 0, 2, 3, 4)), '설정 (충돌 2026-01-02 03-04).md');
 });
 
-test('글자 수', () => {
-  assert.deepEqual(countChars('가 나\n다'), { withSpaces: 5, withoutSpaces: 3 });
-  assert.deepEqual(countChars(''), { withSpaces: 0, withoutSpaces: 0 });
+test('분량: 글자 수', () => {
+  assert.equal(countText('가 나\n다', { unit: 'chars' }), 4); // 줄바꿈은 세지 않음
+  assert.equal(countText('가 나\n다', { unit: 'chars', noSpaces: true }), 3);
+  assert.equal(countText('안녕, 세상!', { unit: 'chars', noPunct: true }), 5);
+  assert.equal(countText('안녕, 세상!', { unit: 'chars', noPunct: true, noSpaces: true }), 4);
+  assert.equal(countText('가★나 ♥', { unit: 'chars', noSymbols: true }), 3);
+  assert.equal(countText('', { unit: 'chars' }), 0);
+});
+
+test('분량: 단어·문장·용량', () => {
+  assert.equal(countText('  하나 둘\n셋 ', { unit: 'words' }), 3);
+  assert.equal(countText('하나 — 둘', { unit: 'words', noPunct: true }), 2);
+  assert.equal(countText('첫 문장. 둘째 문장! 셋째', { unit: 'sentences' }), 3);
+  assert.equal(countText('끝...', { unit: 'sentences' }), 1);
+  assert.equal(countText('', { unit: 'sentences' }), 0);
+  assert.equal(countText('가a', { unit: 'bytes' }), 4);
+  assert.equal(countText('가 a', { unit: 'bytes', noSpaces: true }), 4);
 });
 
 test('충돌 판단', () => {

@@ -18,10 +18,19 @@ export function conflictFileName(name, date) {
   return `${name.replace(/\.md$/, '')} (충돌 ${stamp}).md`;
 }
 
-export const countChars = (text) => ({
-  withSpaces: text.length,
-  withoutSpaces: text.replace(/\s/g, '').length,
-});
+// 분량 세기. opts: { unit: 'chars'|'words'|'sentences'|'bytes', noSpaces, noPunct, noSymbols }
+export function countText(text, { unit = 'chars', noSpaces, noPunct, noSymbols } = {}) {
+  if (unit === 'sentences') {
+    return text.split(/[.!?。？！…]+|\n+/).filter((s) => /[\p{L}\p{N}]/u.test(s)).length;
+  }
+  let t = text;
+  if (noPunct) t = t.replace(/\p{P}/gu, '');
+  if (noSymbols) t = t.replace(/\p{S}/gu, '');
+  if (unit === 'words') return t.split(/\s+/).filter(Boolean).length;
+  t = t.replace(/\r?\n/g, ''); // 줄바꿈은 분량에 넣지 않는다
+  if (noSpaces) t = t.replace(/\s/g, '');
+  return unit === 'bytes' ? new TextEncoder().encode(t).length : [...t].length;
+}
 
 export const isConflict = (knownModified, currentModified) => knownModified !== currentModified;
 

@@ -1,7 +1,7 @@
 import * as drive from './drive.js';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
-  countChars, isConflict, sanitizeTitle,
+  countText, isConflict, sanitizeTitle,
 } from './logic.js';
 
 // 구글 클라우드 콘솔에서 만든 OAuth 클라이언트 ID (README 참고)
@@ -10,6 +10,9 @@ const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const ROOT_NAME = '내소설';
 const SETTINGS = '설정.md';
 const SAVE_DELAY = 2000;
+const UNITS = { chars: ['글자 수', '자'], words: ['단어 수', '단어'], sentences: ['문장 수', '문장'], bytes: ['용량', '바이트'] };
+const COUNT_KEY = 'count-settings';
+const COUNT_DEFAULT = { unit: 'chars', noSpaces: false, noPunct: false, noSymbols: false, goal: 5000, celebrate: true };
 
 const $app = document.getElementById('app');
 const $banner = document.getElementById('login-banner');
@@ -25,6 +28,8 @@ const store = {
 };
 const day = (iso) => new Date(iso).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
 const LOADING = '<p class="quiet">불러오는 중</p>';
+let countSettings = { ...COUNT_DEFAULT };
+try { Object.assign(countSettings, JSON.parse(localStorage.getItem(COUNT_KEY))); } catch { /* 기본값 사용 */ }
 const displayName = (name) => (name === SETTINGS ? '설정 메모' : parseEpisodeName(name)?.title ?? name.replace(/\.md$/, ''));
 
 // ---------- 로그인 ----------
@@ -130,15 +135,36 @@ async function showEditor(folderId, fileId) {
         <a href="#/n/${folderId}" class="place">${esc(folder.name)}</a>
         <p class="no" id="no"></p>
         <h1 id="title"></h1>
-        <p class="count" id="count"></p>
         <p class="status" id="status"></p>
         ${isEpisode ? '<p class="tools"><button id="rename" class="link">제목 바꾸기</button><button id="delete" class="link">휴지통으로</button></p>' : ''}
       </aside>
       <div class="sheet"><textarea id="text" spellcheck="false" placeholder="첫 문장을 써 보세요" aria-label="원고"></textarea></div>
+    </div>
+    <div class="counter" id="counter">
+      <p class="counter-cheer" id="counter-cheer" aria-live="polite"></p>
+      <form class="counter-panel" id="counter-panel" hidden>
+        <fieldset class="units"><legend>세는 단위</legend>
+          ${Object.entries(UNITS).map(([v, [l]]) => `<label><input type="radio" name="unit" value="${v}"> ${l}</label>`).join('')}
+        </fieldset>
+        <fieldset><legend>빼고 세기</legend>
+          <label><input type="checkbox" name="noSpaces"> 공백</label>
+          <label><input type="checkbox" name="noPunct"> 문장부호 <small>. , ! ? " …</small></label>
+          <label><input type="checkbox" name="noSymbols"> 특수문자 <small>★ ♥ ~ +</small></label>
+        </fieldset>
+        <fieldset><legend>한 회차 목표</legend>
+          <label class="goal"><input type="number" name="goal" min="0" step="100" inputmode="numeric" aria-label="목표 분량"> <span id="goal-unit"></span> <small>0이면 목표 없음</small></label>
+          <label><input type="checkbox" name="celebrate"> 목표에 닿으면 축하하기</label>
+        </fieldset>
+      </form>
+      <button type="button" class="counter-face" id="counter-face" aria-expanded="false" aria-controls="counter-panel" title="분량 계산 설정">
+        <span id="counter-num"></span>
+        <span class="counter-bar"><i id="counter-fill"></i></span>
+      </button>
     </div>`;
   const ta = $app.querySelector('#text');
   ta.value = text;
-  editing = { folderId, fileId, name: meta.name, modifiedTime: meta.modifiedTime, dirty, timer: null, saving: false, pending: false, ta };
+  editing = { folderId, fileId, name: meta.name, modifiedTime: meta.modifiedTime, dirty, timer: null, saving: false, pending: false, ta, lastCount: null };
+  setupCounter();
   renderHead();
   setStatus(dirty ? 'typing' : 'saved');
   if (dirty) save();
@@ -163,9 +189,67 @@ function renderHead() {
   updateCount();
 }
 
+// ---------- 분량 ----------
+function setupCounter() {
+  const form = $app.querySelector('#counter-panel');
+  const face = $app.querySelector('#counter-face');
+  const cs = countSettings;
+  form.unit.value = cs.unit;
+  for (const k of ['noSpaces', 'noPunct', 'noSymbols', 'celebrate']) form[k].checked = cs[k];
+  form.goal.value = cs.goal;
+  form.oninput = () => {
+    Object.assign(cs, {
+      unit: form.unit.value, noSpaces: form.noSpaces.checked, noPunct: form.noPunct.checked,
+      noSymbols: form.noSymbols.checked, celebrate: form.celebrate.checked, goal: Math.max(0, Math.floor(Number(form.goal.value) || 0)),
+    });
+    try { localStorage.setItem(COUNT_KEY, JSON.stringify(cs)); } catch { /* 이번 방문에만 적용 */ }
+    editing.lastCount = null; // 설정을 바꾼 것만으로는 축하하지 않는다
+    updateCount();
+  };
+  form.onsubmit = (e) => e.preventDefault();
+  const toggle = (open) => { form.hidden = !open; face.setAttribute('aria-expanded', open); };
+  face.onclick = () => toggle(form.hidden);
+  form.onkeydown = (e) => { if (e.key === 'Escape') { toggle(false); face.focus(); } };
+}
+
+document.addEventListener('pointerdown', (e) => {
+  const counter = $app.querySelector('#counter');
+  if (counter && !counter.contains(e.target)) {
+    $app.querySelector('#counter-panel').hidden = true;
+    $app.querySelector('#counter-face').setAttribute('aria-expanded', false);
+  }
+});
+
 function updateCount() {
-  const c = countChars(editing.ta.value);
-  $app.querySelector('#count').innerHTML = `${c.withSpaces.toLocaleString()}자<br><span>공백 빼고 ${c.withoutSpaces.toLocaleString()}자</span>`;
+  const cs = countSettings;
+  const n = countText(editing.ta.value, cs);
+  const unit = UNITS[cs.unit][1];
+  $app.querySelector('#counter-num').textContent = cs.goal > 0
+    ? `${n.toLocaleString()} / ${cs.goal.toLocaleString()}${unit}` : `${n.toLocaleString()}${unit}`;
+  $app.querySelector('#goal-unit').textContent = unit;
+  $app.querySelector('#counter-fill').style.width = cs.goal > 0 ? `${Math.min(100, (n / cs.goal) * 100)}%` : '0';
+  $app.querySelector('#counter-face').classList.toggle('reached', cs.goal > 0 && n >= cs.goal);
+  if (cs.celebrate && cs.goal > 0 && editing.lastCount !== null && editing.lastCount < cs.goal && n >= cs.goal) celebrate();
+  editing.lastCount = n;
+}
+
+function celebrate() {
+  const counter = $app.querySelector('#counter');
+  const cheer = $app.querySelector('#counter-cheer');
+  cheer.textContent = '목표 분량을 채웠어요';
+  setTimeout(() => { cheer.textContent = ''; }, 3000);
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const burst = document.createElement('div');
+  burst.className = 'confetti';
+  for (let i = 0; i < 22; i++) {
+    const bit = document.createElement('span');
+    const angle = Math.PI * (0.55 + Math.random() * 0.9); // 위쪽과 왼쪽으로 흩어지게
+    const dist = 70 + Math.random() * 90;
+    bit.style.cssText = `--x:${Math.cos(angle) * dist}px;--y:${-Math.abs(Math.sin(angle)) * dist}px;--r:${Math.random() * 540 - 270}deg;animation-delay:${Math.random() * 120}ms`;
+    burst.append(bit);
+  }
+  counter.append(burst);
+  setTimeout(() => burst.remove(), 1600);
 }
 
 const STATUS = { saved: '저장됨', typing: '쓰는 중', saving: '저장하는 중', failed: '저장 안 됨, 이 기기에 보관 중' };
