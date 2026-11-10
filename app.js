@@ -38,12 +38,45 @@ const inputSettings = loadSettings(INPUT_KEY, INPUT_DEFAULT);
 const displayName = (name) => (name === SETTINGS ? '설정 메모' : parseEpisodeName(name)?.title ?? name.replace(/\.md$/, ''));
 
 // ---------- 로그인 ----------
+// 구글 접근 권한(토큰)은 한 번에 1시간까지만 받을 수 있다. 서버 없이 쓰는 앱이라
+// 토큰을 이 기기에 보관해 두고, 만료되면 버튼 한 번으로 계정 선택 없이 다시 받는다.
+const TOKEN_KEY = 'google-token';
+const REMEMBER_KEY = 'google-signed-in';
+const remembered = () => { try { return localStorage.getItem(REMEMBER_KEY) === '1'; } catch { return false; } };
+
+function savedToken() {
+  try {
+    const t = JSON.parse(localStorage.getItem(TOKEN_KEY));
+    return t && t.exp > Date.now() ? t.token : null;
+  } catch { return null; }
+}
+
 function login() {
   return new Promise((resolve, reject) => {
-    tokenClient.callback = (r) => (r.error ? reject(new Error(r.error)) : resolve(r));
+    tokenClient.callback = (r) => {
+      if (r.error) return reject(new Error(r.error));
+      const exp = Date.now() + ((Number(r.expires_in) || 3600) - 60) * 1000; // 1분 일찍 만료로 본다
+      try {
+        localStorage.setItem(TOKEN_KEY, JSON.stringify({ token: r.access_token, exp }));
+        localStorage.setItem(REMEMBER_KEY, '1');
+      } catch { /* 이번 방문에만 로그인 */ }
+      drive.setToken(r.access_token);
+      resolve();
+    };
     tokenClient.error_callback = (e) => reject(new Error(e.type));
-    tokenClient.requestAccessToken();
+    // 한 번 들어온 적 있으면 계정 선택·동의 화면 없이 바로 받는다
+    tokenClient.requestAccessToken(remembered() ? { prompt: '' } : {});
   });
+}
+
+async function logout() {
+  if (!confirm('로그아웃할까요?\n다시 들어올 때 구글 계정을 다시 골라야 해요. 원고는 드라이브에 그대로 있어요.')) return;
+  const token = savedToken();
+  try { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(REMEMBER_KEY); } catch { /* 무시 */ }
+  if (token) google.accounts.oauth2.revoke(token, () => {});
+  drive.setToken(null);
+  history.replaceState(null, '', location.pathname);
+  showEntrance();
 }
 
 function needLogin() {
@@ -52,7 +85,7 @@ function needLogin() {
 
 $banner.querySelector('button').onclick = async () => {
   try {
-    drive.setToken((await login()).access_token);
+    await login();
     $banner.hidden = true;
     if (editing) save(); else route();
   } catch (e) { alert(`로그인 실패: ${e.message}`); }
@@ -81,9 +114,10 @@ async function showNovels() {
     .filter((f) => f.mimeType === 'application/vnd.google-apps.folder')
     .sort((x, y) => x.name.localeCompare(y.name, 'ko'));
   $app.innerHTML = `
-    <header class="page-head"><p class="place">집필</p><h1>작품</h1><button class="link open-settings">설정</button></header>
+    <header class="page-head"><p class="place">집필</p><h1>작품</h1><p class="head-tools"><button class="link open-settings">설정</button><button class="link" id="logout">로그아웃</button></p></header>
     <ul class="works">${items.map((f) => `<li><a href="#/n/${f.id}"><span class="work-title">${esc(f.name)}</span><span class="date">${day(f.modifiedTime)} 수정</span></a></li>`).join('') || '<li class="empty">아직 작품이 없어요. 첫 작품을 만들어 보세요.</li>'}</ul>
     <button id="add" class="act">새 작품 만들기</button>`;
+  $app.querySelector('#logout').onclick = logout;
   $app.querySelector('#add').onclick = async () => {
     const title = prompt('작품 제목');
     if (title === null) return;
@@ -107,10 +141,17 @@ async function showNovel(folderId) {
     return `<li><a href="#/e/${folderId}/${f.id}"><span class="no">${ep ? String(ep.num).padStart(3, '0') : ''}</span><span class="ep-title">${esc(ep ? ep.title : displayName(f.name))}</span><span class="date">${day(f.modifiedTime)}</span></a></li>`;
   };
   $app.innerHTML = `
-    <header class="page-head"><a href="#/" class="place">작품</a><h1>${esc(folder.name)}</h1><button class="link open-settings">설정</button></header>
+    <header class="page-head"><a href="#/" class="place">작품</a><h1>${esc(folder.name)}</h1><p class="head-tools"><button class="link open-settings">설정</button><button class="link danger" id="delete-work">작품 휴지통으로</button></p></header>
     ${settings ? `<p class="memo"><a href="#/e/${folderId}/${settings.id}">설정 메모</a> 인물과 세계관을 적어 두는 곳</p>` : ''}
     <ol class="episodes">${episodes.map(row).join('') || '<li class="empty">아직 회차가 없어요. 첫 회차를 만들어 보세요.</li>'}</ol>
     <button id="add" class="act">새 회차 만들기</button>`;
+  $app.querySelector('#delete-work').onclick = async () => {
+    if (!confirm(`"${folder.name}" 작품을 회차 ${episodes.length}개와 설정 메모까지 모두 드라이브 휴지통으로 옮길까요?\n30일 안에는 드라이브 휴지통에서 되살릴 수 있어요.`)) return;
+    try {
+      await drive.trash(folderId);
+      location.hash = '#/';
+    } catch (e) { e.status === 401 ? needLogin() : alert(`작품을 옮기지 못했어요. ${e.message}`); }
+  };
   $app.querySelector('#add').onclick = async () => {
     const title = prompt('회차 제목');
     if (title === null) return;
@@ -124,7 +165,11 @@ async function showNovel(folderId) {
 
 async function showEditor(folderId, fileId) {
   $app.innerHTML = LOADING;
-  const [meta, remote, folder] = await Promise.all([drive.getMeta(fileId), drive.readText(fileId), drive.getMeta(folderId)]);
+  const [meta, remote, folder, siblings] = await Promise.all([
+    drive.getMeta(fileId), drive.readText(fileId), drive.getMeta(folderId), drive.listChildren(folderId),
+  ]);
+  const memoFile = siblings.find((f) => f.name === SETTINGS && f.id !== fileId);
+  const memo = memoFile ? await drive.readText(memoFile.id) : null;
   let text = remote, dirty = false;
   const draft = store.get(fileId);
   if (draft && draft.text !== remote) {
@@ -136,13 +181,19 @@ async function showEditor(folderId, fileId) {
   const isEpisode = !!parseEpisodeName(meta.name);
   $app.innerHTML = `
     <div class="room">
-      <aside class="label">
-        <a href="#/n/${folderId}" class="place">${esc(folder.name)}</a>
-        <p class="no" id="no"></p>
-        <h1 id="title"></h1>
-        <p class="status" id="status"></p>
-        <p class="tools">${isEpisode ? '<button id="rename" class="link">제목 바꾸기</button><button id="delete" class="link">휴지통으로</button>' : ''}<button class="link open-settings">설정</button></p>
-      </aside>
+      <aside class="label"><div class="label-in">
+        <div class="plaque">
+          <a href="#/n/${folderId}" class="place">${esc(folder.name)}</a>
+          <h1 id="title"></h1>
+          <p class="status" id="status"></p>
+          <p class="tools">${isEpisode ? '<button id="rename" class="link">제목 바꾸기</button><button id="delete" class="link">휴지통으로</button>' : ''}<button class="link open-settings">설정</button></p>
+          <p class="no" id="no"></p>
+        </div>
+        ${memoFile ? `<div class="plaque memo-card">
+          <p class="memo-head"><span>설정 메모</span><a href="#/e/${folderId}/${memoFile.id}">고치기</a></p>
+          <div class="memo-body">${memoHtml(memo)}</div>
+        </div>` : ''}
+      </div></aside>
       <div class="sheet"><textarea id="text" spellcheck="false" placeholder="첫 문장을 써 보세요" aria-label="원고"></textarea></div>
     </div>
     <div class="counter" id="counter">
@@ -185,9 +236,22 @@ async function showEditor(folderId, fileId) {
   $app.querySelector('#delete')?.addEventListener('click', deleteEpisode);
 }
 
+// 설정 메모를 설명 카드용 문단으로. "# 제목" 줄은 작은 소제목으로.
+function memoHtml(text) {
+  const blocks = text.trim().split(/\n\s*\n/).filter(Boolean);
+  if (!blocks.length) return '<p class="quiet">아직 비어 있어요. 인물과 세계관을 적어 두면 여기에 보여요.</p>';
+  return blocks.map((b) => {
+    const lines = b.split('\n');
+    const head = /^#+\s/.test(lines[0]) ? `<h4>${esc(lines.shift().replace(/^#+\s*/, ''))}</h4>` : '';
+    return head + (lines.length ? `<p>${lines.map(esc).join('<br>')}</p>` : '');
+  }).join('');
+}
+
 function renderHead() {
   const ep = parseEpisodeName(editing.name);
-  $app.querySelector('#no').textContent = ep ? `${ep.num}화` : '';
+  const no = $app.querySelector('#no');
+  no.textContent = ep ? ep.num : '';
+  no.setAttribute('aria-label', ep ? `${ep.num}화` : '');
   $app.querySelector('#title').textContent = displayName(editing.name);
   document.title = `${displayName(editing.name)} - 집필`;
   updateCount();
@@ -338,19 +402,35 @@ async function start() {
   await new Promise((r) => { const t = setInterval(() => { if (window.google?.accounts?.oauth2) { clearInterval(t); r(); } }, 50); });
   setupSettings();
   tokenClient = google.accounts.oauth2.initTokenClient({ client_id: CLIENT_ID, scope: SCOPE, callback: () => {} });
+  window.onhashchange = () => { if (rootId) route(); };
+  const token = savedToken();
+  if (token) {
+    drive.setToken(token);
+    try { await enter(); return; } catch { /* 토큰이 취소됐거나 만료: 입구로 */ }
+  }
+  showEntrance();
+}
+
+async function enter() {
+  $app.innerHTML = LOADING;
+  rootId = await drive.findOrCreateFolder(ROOT_NAME);
+  route();
+}
+
+function showEntrance() {
+  rootId = null;
+  const back = remembered();
   $app.innerHTML = `
     <div class="entrance">
       <h1>집필</h1>
       <p>쓰는 글은 내 구글 드라이브의 내소설 폴더에 회차별로 보관돼요. 집 컴퓨터와 휴대폰 어디서 열어도 같은 원고가 이어져요.</p>
-      <button id="go" class="act">구글 계정으로 들어가기</button>
+      <button id="go" class="act">${back ? '이어서 쓰기' : '구글 계정으로 들어가기'}</button>
     </div>`;
   $app.querySelector('#go').onclick = async () => {
     try {
-      drive.setToken((await login()).access_token);
-      rootId = await drive.findOrCreateFolder(ROOT_NAME);
-      window.onhashchange = route;
-      route();
-    } catch (e) { e.status ? failed(e, start) : alert(`로그인 실패: ${e.message}`); }
+      await login();
+      await enter();
+    } catch (e) { e.status ? failed(e, showEntrance) : alert(`로그인하지 못했어요. ${e.message}`); }
   };
 }
 
