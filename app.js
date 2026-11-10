@@ -1,7 +1,7 @@
 import * as drive from './drive.js';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
-  countText, isConflict, sanitizeTitle,
+  countText, assist, isConflict, sanitizeTitle,
 } from './logic.js';
 
 // 구글 클라우드 콘솔에서 만든 OAuth 클라이언트 ID (README 참고)
@@ -12,7 +12,9 @@ const SETTINGS = '설정.md';
 const SAVE_DELAY = 2000;
 const UNITS = { chars: ['글자 수', '자'], words: ['단어 수', '단어'], sentences: ['문장 수', '문장'], bytes: ['용량', '바이트'] };
 const COUNT_KEY = 'count-settings';
-const COUNT_DEFAULT = { unit: 'chars', noSpaces: false, noPunct: false, noSymbols: false, goal: 5000, celebrate: true };
+const COUNT_DEFAULT = { unit: 'chars', noSpaces: false, noPunct: false, noSymbols: false, noComments: true, goal: 5000, celebrate: true };
+const INPUT_KEY = 'input-settings';
+const INPUT_DEFAULT = { autoQuotes: true, smartQuotes: true, autoBrackets: false, smartBrackets: false, divider: true };
 
 const $app = document.getElementById('app');
 const $banner = document.getElementById('login-banner');
@@ -28,8 +30,11 @@ const store = {
 };
 const day = (iso) => new Date(iso).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
 const LOADING = '<p class="quiet">불러오는 중</p>';
-let countSettings = { ...COUNT_DEFAULT };
-try { Object.assign(countSettings, JSON.parse(localStorage.getItem(COUNT_KEY))); } catch { /* 기본값 사용 */ }
+const loadSettings = (key, defaults) => {
+  try { return { ...defaults, ...JSON.parse(localStorage.getItem(key)) }; } catch { return { ...defaults }; }
+};
+const countSettings = loadSettings(COUNT_KEY, COUNT_DEFAULT);
+const inputSettings = loadSettings(INPUT_KEY, INPUT_DEFAULT);
 const displayName = (name) => (name === SETTINGS ? '설정 메모' : parseEpisodeName(name)?.title ?? name.replace(/\.md$/, ''));
 
 // ---------- 로그인 ----------
@@ -76,7 +81,7 @@ async function showNovels() {
     .filter((f) => f.mimeType === 'application/vnd.google-apps.folder')
     .sort((x, y) => x.name.localeCompare(y.name, 'ko'));
   $app.innerHTML = `
-    <header class="page-head"><p class="place">집필</p><h1>작품</h1></header>
+    <header class="page-head"><p class="place">집필</p><h1>작품</h1><button class="link open-settings">설정</button></header>
     <ul class="works">${items.map((f) => `<li><a href="#/n/${f.id}"><span class="work-title">${esc(f.name)}</span><span class="date">${day(f.modifiedTime)} 수정</span></a></li>`).join('') || '<li class="empty">아직 작품이 없어요. 첫 작품을 만들어 보세요.</li>'}</ul>
     <button id="add" class="act">새 작품 만들기</button>`;
   $app.querySelector('#add').onclick = async () => {
@@ -102,7 +107,7 @@ async function showNovel(folderId) {
     return `<li><a href="#/e/${folderId}/${f.id}"><span class="no">${ep ? String(ep.num).padStart(3, '0') : ''}</span><span class="ep-title">${esc(ep ? ep.title : displayName(f.name))}</span><span class="date">${day(f.modifiedTime)}</span></a></li>`;
   };
   $app.innerHTML = `
-    <header class="page-head"><a href="#/" class="place">작품</a><h1>${esc(folder.name)}</h1></header>
+    <header class="page-head"><a href="#/" class="place">작품</a><h1>${esc(folder.name)}</h1><button class="link open-settings">설정</button></header>
     ${settings ? `<p class="memo"><a href="#/e/${folderId}/${settings.id}">설정 메모</a> 인물과 세계관을 적어 두는 곳</p>` : ''}
     <ol class="episodes">${episodes.map(row).join('') || '<li class="empty">아직 회차가 없어요. 첫 회차를 만들어 보세요.</li>'}</ol>
     <button id="add" class="act">새 회차 만들기</button>`;
@@ -136,27 +141,13 @@ async function showEditor(folderId, fileId) {
         <p class="no" id="no"></p>
         <h1 id="title"></h1>
         <p class="status" id="status"></p>
-        ${isEpisode ? '<p class="tools"><button id="rename" class="link">제목 바꾸기</button><button id="delete" class="link">휴지통으로</button></p>' : ''}
+        <p class="tools">${isEpisode ? '<button id="rename" class="link">제목 바꾸기</button><button id="delete" class="link">휴지통으로</button>' : ''}<button class="link open-settings">설정</button></p>
       </aside>
       <div class="sheet"><textarea id="text" spellcheck="false" placeholder="첫 문장을 써 보세요" aria-label="원고"></textarea></div>
     </div>
     <div class="counter" id="counter">
       <p class="counter-cheer" id="counter-cheer" aria-live="polite"></p>
-      <form class="counter-panel" id="counter-panel" hidden>
-        <fieldset class="units"><legend>세는 단위</legend>
-          ${Object.entries(UNITS).map(([v, [l]]) => `<label><input type="radio" name="unit" value="${v}"> ${l}</label>`).join('')}
-        </fieldset>
-        <fieldset><legend>빼고 세기</legend>
-          <label><input type="checkbox" name="noSpaces"> 공백</label>
-          <label><input type="checkbox" name="noPunct"> 문장부호 <small>. , ! ? " …</small></label>
-          <label><input type="checkbox" name="noSymbols"> 특수문자 <small>★ ♥ ~ +</small></label>
-        </fieldset>
-        <fieldset><legend>한 회차 목표</legend>
-          <label class="goal"><input type="number" name="goal" min="0" step="100" inputmode="numeric" aria-label="목표 분량"> <span id="goal-unit"></span> <small>0이면 목표 없음</small></label>
-          <label><input type="checkbox" name="celebrate"> 목표에 닿으면 축하하기</label>
-        </fieldset>
-      </form>
-      <button type="button" class="counter-face" id="counter-face" aria-expanded="false" aria-controls="counter-panel" title="분량 계산 설정">
+      <button type="button" class="counter-face open-settings" id="counter-face" title="분량 계산 설정 열기">
         <span id="counter-num"></span>
         <span class="counter-bar"><i id="counter-fill"></i></span>
       </button>
@@ -164,11 +155,24 @@ async function showEditor(folderId, fileId) {
   const ta = $app.querySelector('#text');
   ta.value = text;
   editing = { folderId, fileId, name: meta.name, modifiedTime: meta.modifiedTime, dirty, timer: null, saving: false, pending: false, ta, lastCount: null };
-  setupCounter();
   renderHead();
   setStatus(dirty ? 'typing' : 'saved');
   if (dirty) save();
 
+  ta.addEventListener('beforeinput', (e) => {
+    if (e.isComposing) return;
+    const key = e.inputType === 'insertText' ? e.data : /^insert(LineBreak|Paragraph)$/.test(e.inputType) ? 'Enter' : null;
+    const r = key && assist(ta.value, ta.selectionStart, ta.selectionEnd, key, inputSettings);
+    if (!r) return;
+    e.preventDefault();
+    ta.setSelectionRange(r.from, r.to);
+    // execCommand는 되돌리기(Ctrl+Z) 기록을 남긴다. 안 되는 브라우저에서는 직접 바꾼다.
+    if (r.insert && !document.execCommand('insertText', false, r.insert)) {
+      ta.setRangeText(r.insert, r.from, r.to, 'end');
+      ta.dispatchEvent(new Event('input'));
+    }
+    ta.setSelectionRange(r.cursor, r.cursor);
+  });
   ta.oninput = () => {
     editing.dirty = true;
     store.set(editing.fileId, ta.value);
@@ -189,36 +193,36 @@ function renderHead() {
   updateCount();
 }
 
-// ---------- 분량 ----------
-function setupCounter() {
-  const form = $app.querySelector('#counter-panel');
-  const face = $app.querySelector('#counter-face');
-  const cs = countSettings;
-  form.unit.value = cs.unit;
-  for (const k of ['noSpaces', 'noPunct', 'noSymbols', 'celebrate']) form[k].checked = cs[k];
-  form.goal.value = cs.goal;
-  form.oninput = () => {
-    Object.assign(cs, {
-      unit: form.unit.value, noSpaces: form.noSpaces.checked, noPunct: form.noPunct.checked,
-      noSymbols: form.noSymbols.checked, celebrate: form.celebrate.checked, goal: Math.max(0, Math.floor(Number(form.goal.value) || 0)),
+// ---------- 설정창 ----------
+const $settings = document.getElementById('settings');
+const $form = document.getElementById('settings-form');
+
+function setupSettings() {
+  const f = $form;
+  f.unit.value = countSettings.unit;
+  for (const k of ['noSpaces', 'noPunct', 'noSymbols', 'noComments', 'celebrate']) f[k].checked = countSettings[k];
+  f.goal.value = countSettings.goal;
+  for (const k of Object.keys(INPUT_DEFAULT)) f[k].checked = inputSettings[k];
+  f.oninput = () => {
+    Object.assign(countSettings, {
+      unit: f.unit.value, noSpaces: f.noSpaces.checked, noPunct: f.noPunct.checked, noSymbols: f.noSymbols.checked,
+      noComments: f.noComments.checked, celebrate: f.celebrate.checked, goal: Math.max(0, Math.floor(Number(f.goal.value) || 0)),
     });
-    try { localStorage.setItem(COUNT_KEY, JSON.stringify(cs)); } catch { /* 이번 방문에만 적용 */ }
-    editing.lastCount = null; // 설정을 바꾼 것만으로는 축하하지 않는다
-    updateCount();
+    for (const k of Object.keys(INPUT_DEFAULT)) inputSettings[k] = f[k].checked;
+    try {
+      localStorage.setItem(COUNT_KEY, JSON.stringify(countSettings));
+      localStorage.setItem(INPUT_KEY, JSON.stringify(inputSettings));
+    } catch { /* 이번 방문에만 적용 */ }
+    showGoalUnit();
+    if (editing) { editing.lastCount = null; updateCount(); } // 설정을 바꾼 것만으로는 축하하지 않는다
   };
-  form.onsubmit = (e) => e.preventDefault();
-  const toggle = (open) => { form.hidden = !open; face.setAttribute('aria-expanded', open); };
-  face.onclick = () => toggle(form.hidden);
-  form.onkeydown = (e) => { if (e.key === 'Escape') { toggle(false); face.focus(); } };
+  showGoalUnit();
+  // 바깥(어두운 부분)을 누르면 닫기
+  $settings.addEventListener('click', (e) => { if (e.target === $settings) $settings.close(); });
+  document.addEventListener('click', (e) => { if (e.target.closest('.open-settings')) $settings.showModal(); });
 }
 
-document.addEventListener('pointerdown', (e) => {
-  const counter = $app.querySelector('#counter');
-  if (counter && !counter.contains(e.target)) {
-    $app.querySelector('#counter-panel').hidden = true;
-    $app.querySelector('#counter-face').setAttribute('aria-expanded', false);
-  }
-});
+const showGoalUnit = () => { document.getElementById('goal-unit').textContent = UNITS[countSettings.unit][1]; };
 
 function updateCount() {
   const cs = countSettings;
@@ -226,7 +230,6 @@ function updateCount() {
   const unit = UNITS[cs.unit][1];
   $app.querySelector('#counter-num').textContent = cs.goal > 0
     ? `${n.toLocaleString()} / ${cs.goal.toLocaleString()}${unit}` : `${n.toLocaleString()}${unit}`;
-  $app.querySelector('#goal-unit').textContent = unit;
   $app.querySelector('#counter-fill').style.width = cs.goal > 0 ? `${Math.min(100, (n / cs.goal) * 100)}%` : '0';
   $app.querySelector('#counter-face').classList.toggle('reached', cs.goal > 0 && n >= cs.goal);
   if (cs.celebrate && cs.goal > 0 && editing.lastCount !== null && editing.lastCount < cs.goal && n >= cs.goal) celebrate();
@@ -333,6 +336,7 @@ async function start() {
     return;
   }
   await new Promise((r) => { const t = setInterval(() => { if (window.google?.accounts?.oauth2) { clearInterval(t); r(); } }, 50); });
+  setupSettings();
   tokenClient = google.accounts.oauth2.initTokenClient({ client_id: CLIENT_ID, scope: SCOPE, callback: () => {} });
   $app.innerHTML = `
     <div class="entrance">

@@ -83,15 +83,36 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .counter-face.reached .counter-bar i { background: var(--dot); }
 .counter-cheer { font-family: var(--text); font-size: .95rem; }
 .counter-cheer:empty { display: none; }
-.counter-panel { width: min(20rem, calc(100vw - 40px)); display: grid; gap: 16px; padding: 16px 18px; background: var(--sheet); border: 1px solid var(--edge); border-radius: 2px; font-size: .9rem; }
-.counter-panel[hidden] { display: none; }
-.counter-panel fieldset { display: grid; gap: 2px; margin: 0; padding: 0; border: 0; min-width: 0; }
-.counter-panel legend { padding: 0; margin-bottom: 4px; color: var(--caption); font-size: .8rem; }
-.counter-panel .units { grid-template-columns: 1fr 1fr; }
-.counter-panel label { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 34px; cursor: pointer; }
-.counter-panel small { color: var(--caption); font-size: .8rem; }
-.counter-panel input[type="radio"], .counter-panel input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--ink); }
-.counter-panel .goal input { width: 6.5em; padding: 6px 8px; border: 1px solid var(--edge); border-radius: 2px; background: var(--wall); color: var(--ink); font: inherit; font-variant-numeric: tabular-nums; }
+/* 설정창: 벽에서 꺼낸 안내 카드 한 장 */
+#settings { width: min(34rem, calc(100vw - 32px)); max-height: calc(100dvh - 48px); padding: 0; border: 1px solid var(--edge); border-radius: 2px; background: var(--sheet); color: var(--ink); }
+#settings::backdrop { background: rgb(20 22 24 / .35); }
+#settings-form { display: grid; gap: 28px; padding: 24px 28px 28px; font-size: .9rem; }
+.dlg-head { display: flex; justify-content: space-between; align-items: baseline; }
+.dlg-head h2 { outline: none; margin: 0; font: 400 1.5rem/1.3 var(--text); }
+#settings section { display: grid; gap: 14px; }
+#settings h3 { margin: 0; padding-bottom: 8px; border-bottom: 1px solid var(--edge); font: 500 1rem/1.4 var(--sign); }
+#settings fieldset { display: grid; gap: 2px; margin: 0; padding: 0; border: 0; min-width: 0; }
+#settings legend { padding: 0; margin-bottom: 4px; color: var(--caption); font-size: .8rem; }
+#settings .units { grid-template-columns: repeat(4, auto); justify-content: start; column-gap: 20px; }
+#settings label { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 34px; cursor: pointer; }
+#settings small { color: var(--caption); font-size: .8rem; }
+#settings input[type="radio"], #settings input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--ink); }
+#settings .goal input { width: 6.5em; padding: 6px 8px; border: 1px solid var(--edge); border-radius: 2px; background: var(--wall); color: var(--ink); font: inherit; font-variant-numeric: tabular-nums; }
+#settings .opt { display: grid; grid-template-columns: 1fr auto; align-items: start; gap: 16px; padding: 4px 0; }
+#settings .opt span { display: grid; gap: 2px; }
+#settings .opt b { font-weight: 500; }
+#settings .opt small { line-height: 1.5; }
+#settings .opt input { grid-column: 2; grid-row: 1; margin-top: 2px; }
+/* 켜고 끄는 스위치 */
+#settings input[role="switch"] { appearance: none; width: 34px; height: 20px; border: 1px solid var(--caption); border-radius: 10px; background: var(--wall); position: relative; cursor: pointer; }
+#settings input[role="switch"]::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--caption); transition: transform .15s; }
+#settings input[role="switch"]:checked { background: var(--ink); border-color: var(--ink); }
+#settings input[role="switch"]:checked::after { transform: translateX(14px); background: var(--sheet); }
+.page-head .open-settings { margin-top: 6px; }
+@media (max-width: 520px) {
+  #settings-form { padding: 20px 18px 24px; }
+  #settings .units { grid-template-columns: 1fr 1fr; }
+}
 .confetti { position: absolute; right: 5rem; bottom: 1.5rem; pointer-events: none; }
 .confetti span { position: absolute; width: 5px; height: 9px; background: var(--ink); opacity: 0; animation: confetti 1.3s cubic-bezier(.2,.7,.4,1) forwards; }
 .confetti span:nth-child(3n) { background: var(--dot); }
