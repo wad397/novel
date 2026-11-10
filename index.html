@@ -14,8 +14,8 @@
   <div id="login-banner" hidden><span>구글 로그인이 만료됐어요. 쓴 글은 이 기기에 보관 중이에요.</span><button>다시 로그인</button></div>
   <main id="app"><p class="quiet">불러오는 중</p></main>
 
-  <dialog id="settings" aria-labelledby="settings-title">
-    <form method="dialog" id="settings-form">
+  <dialog id="settings" class="panel" aria-labelledby="settings-title">
+    <form method="dialog" id="settings-form" class="panel-form">
       <header class="dlg-head">
         <h2 id="settings-title" tabindex="-1" autofocus>설정</h2>
         <button value="close" class="link">닫기</button>
@@ -55,7 +55,58 @@
           <span><b>장면 구분선 맞추기</b><small>한 줄에 --- 나 —— 나 *** 만 쓰고 Enter를 누르면 * * * 로 바뀌어요.</small></span></label>
       </section>
 
+      <section>
+        <h3>Claude 컨셉</h3>
+        <label class="field" for="aiConcept"><span>Claude가 맡을 역할과 말투<small>Claude에게 물을 때마다 맨 앞에 같이 들어가요. 비워 두면 기본 Claude로 대답해요.</small></span></label>
+        <textarea id="aiConcept" name="aiConcept" rows="5" placeholder="예: 너는 20년 차 장르소설 편집자 '윤 편집장'이다. 짧고 직설적으로 말하고, 칭찬 하나에 지적 둘을 섞는다. 독자가 지루해할 지점을 가장 먼저 짚는다."></textarea>
+      </section>
+
       <p class="quiet">설정은 이 기기에만 저장돼요.</p>
+    </form>
+  </dialog>
+
+  <dialog id="ask" class="panel" aria-labelledby="ask-title">
+    <form method="dialog" id="ask-form" class="panel-form">
+      <header class="dlg-head">
+        <h2 id="ask-title" tabindex="-1" autofocus>Claude에게 묻기</h2>
+        <button value="close" class="link">닫기</button>
+      </header>
+      <fieldset class="presets"><legend>무엇을 부탁할까요</legend>
+        <label><input type="radio" name="preset" value="feedback" checked> 피드백 받기</label>
+        <label><input type="radio" name="preset" value="check"> 설정과 맞는지 보기</label>
+        <label><input type="radio" name="preset" value="polish"> 문장 다듬기</label>
+        <label><input type="radio" name="preset" value="continue"> 다음 장면 이어 쓰기</label>
+        <label><input type="radio" name="preset" value="free"> 직접 쓰기</label>
+      </fieldset>
+      <label class="field" for="ask-extra"><span>덧붙일 말</span></label>
+      <textarea id="ask-extra" name="extra" rows="3" placeholder="예: 서윤의 대사가 너무 딱딱한지 봐줘"></textarea>
+      <p class="quiet">이 회차 본문, 설정 메모, Claude 컨셉이 함께 복사돼요.</p>
+      <div class="row">
+        <button type="button" id="ask-copy" class="act">복사하기</button>
+        <a id="ask-open" class="act ghost" href="https://claude.ai/new" target="_blank" rel="noopener" hidden>Claude 열기 ↗</a>
+      </div>
+      <p id="ask-done" class="quiet" aria-live="polite"></p>
+    </form>
+  </dialog>
+
+  <dialog id="apply" class="panel" aria-labelledby="apply-title">
+    <form method="dialog" id="apply-form" class="panel-form">
+      <header class="dlg-head">
+        <h2 id="apply-title" tabindex="-1" autofocus>수정본 반영</h2>
+        <button value="close" class="link">닫기</button>
+      </header>
+      <label class="field" for="apply-pasted"><span>Claude의 답을 그대로 붙여 넣으세요<small>답 속의 수정본이나 이어쓰기 부분만 골라서 반영해요.</small></span></label>
+      <textarea id="apply-pasted" name="pasted" rows="5"></textarea>
+      <fieldset><legend>어떻게 반영할까요</legend>
+        <label><input type="radio" name="mode" value="replace" checked> 원고 전체를 수정본으로 바꾸기</label>
+        <label><input type="radio" name="mode" value="append"> 원고 끝에 붙이기</label>
+      </fieldset>
+      <p id="apply-summary" class="quiet"></p>
+      <div id="apply-preview" class="diff" hidden></div>
+      <div class="row">
+        <button type="button" id="apply-ok" class="act" disabled>반영하기</button>
+      </div>
+      <p class="quiet">반영한 뒤에도 원고에서 Ctrl+Z로 되돌릴 수 있어요.</p>
     </form>
   </dialog>
 </body>

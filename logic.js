@@ -71,6 +71,62 @@ export function assist(text, start, end, key, o) {
   return null;
 }
 
+// 두 배열의 차이. [{ t: '=' | '-' | '+', v }]
+// 앞뒤의 같은 부분을 먼저 떼고 가운데만 LCS로 비교한다.
+export function diff(a, b) {
+  let s = 0;
+  while (s < a.length && s < b.length && a[s] === b[s]) s++;
+  let ea = a.length, eb = b.length;
+  while (ea > s && eb > s && a[ea - 1] === b[eb - 1]) { ea--; eb--; }
+  const A = a.slice(s, ea), B = b.slice(s, eb);
+  const mid = [];
+  if (A.length * B.length > 4e6) {
+    // shortcut: 바뀐 부분이 아주 크면 통째로 지우고 넣은 것으로 본다
+    A.forEach((v) => mid.push({ t: '-', v }));
+    B.forEach((v) => mid.push({ t: '+', v }));
+  } else {
+    const L = Array.from({ length: A.length + 1 }, () => new Uint32Array(B.length + 1));
+    for (let i = A.length - 1; i >= 0; i--) {
+      for (let j = B.length - 1; j >= 0; j--) {
+        L[i][j] = A[i] === B[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+      }
+    }
+    let i = 0, j = 0;
+    while (i < A.length || j < B.length) {
+      if (i < A.length && j < B.length && A[i] === B[j]) { mid.push({ t: '=', v: A[i] }); i++; j++; }
+      else if (j < B.length && (i === A.length || L[i][j + 1] > L[i + 1][j])) mid.push({ t: '+', v: B[j++] });
+      else mid.push({ t: '-', v: A[i++] });
+    }
+  }
+  return [
+    ...a.slice(0, s).map((v) => ({ t: '=', v })),
+    ...mid,
+    ...a.slice(ea).map((v) => ({ t: '=', v })),
+  ];
+}
+
+// Claude 답에서 ```수정본 / ```이어쓰기 블록을 꺼낸다. 없으면 붙여 넣은 글 전체.
+export function extractRevision(pasted) {
+  const m = /```(수정본|이어쓰기)[^\n]*\n([\s\S]*?)\n?```/.exec(pasted);
+  if (m) return { mode: m[1] === '수정본' ? 'replace' : 'append', body: m[2].trim() };
+  return { mode: null, body: pasted.trim() };
+}
+
+// Claude에게 보낼 질문 한 덩어리
+export function buildPrompt({ concept, request, extra, work, episode, memo, text }) {
+  return [
+    concept.trim() && `[너의 역할]\n${concept.trim()}`,
+    `[요청]\n${[request, extra.trim()].filter(Boolean).join('\n')}`,
+    `[작품] ${work}\n[회차] ${episode}`,
+    `[설정 메모]\n${memo.trim() || '(없음)'}`,
+    `[본문]\n${text}`,
+    '[답하는 방법]\n'
+      + '- 원고를 고쳐 달라는 요청이면 설명은 짧게 하고, 고친 회차 전체를 ```수정본 으로 시작하는 코드 블록 하나에 담아줘. 고치지 않은 문장도 빠짐없이 그대로 넣어줘.\n'
+      + '- 이어 쓸 장면을 부탁하면 새로 쓴 부분만 ```이어쓰기 로 시작하는 코드 블록 하나에 담아줘.\n'
+      + '- 피드백이나 검토만 부탁하면 코드 블록 없이 답해줘.',
+  ].filter(Boolean).join('\n\n');
+}
+
 export const isConflict = (knownModified, currentModified) => knownModified !== currentModified;
 
 // Drive 검색식(q)의 작은따옴표 문자열 안에 넣을 값

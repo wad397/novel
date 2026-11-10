@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
-  countText, assist, isConflict, escapeQuery, sanitizeTitle,
+  countText, assist, diff, extractRevision, buildPrompt, isConflict, escapeQuery, sanitizeTitle,
 } from '../logic.js';
 
 test('회차 파일 이름', () => {
@@ -99,4 +99,29 @@ test('엔터: 구분선 바꾸기', () => {
 test('분량: // 메모 줄 빼기', () => {
   assert.equal(countText('가나\n// 복선 회수\n다', { unit: 'chars', noComments: true }), 3);
   assert.equal(countText('가나\n// 메모', { unit: 'sentences', noComments: true }), 1);
+});
+
+test('비교: 줄 단위 바뀐 곳', () => {
+  const ops = diff(['가', '나', '다'], ['가', '나!', '다', '라']);
+  assert.deepEqual(ops, [
+    { t: '=', v: '가' }, { t: '-', v: '나' }, { t: '+', v: '나!' }, { t: '=', v: '다' }, { t: '+', v: '라' },
+  ]);
+  assert.deepEqual(diff([], []), []);
+  assert.deepEqual(diff(['a'], []), [{ t: '-', v: 'a' }]);
+});
+
+test('수정본 꺼내기', () => {
+  assert.deepEqual(extractRevision('설명입니다.\n```수정본\n첫 줄\n둘째 줄\n```\n끝'), { mode: 'replace', body: '첫 줄\n둘째 줄' });
+  assert.deepEqual(extractRevision('```이어쓰기\n다음 장면\n```'), { mode: 'append', body: '다음 장면' });
+  assert.deepEqual(extractRevision('  그냥 붙여 넣은 글  \n'), { mode: null, body: '그냥 붙여 넣은 글' });
+});
+
+test('질문 문구', () => {
+  const p = buildPrompt({ concept: '윤 편집장', request: '피드백해줘', extra: '대사 위주로', work: '열람실의 유령', episode: '1화 프롤로그', memo: '', text: '본문' });
+  assert.match(p, /^\[너의 역할\]\n윤 편집장/);
+  assert.match(p, /\[요청\]\n피드백해줘\n대사 위주로/);
+  assert.match(p, /\[설정 메모\]\n\(없음\)/);
+  assert.match(p, /\[본문\]\n본문/);
+  assert.match(p, /```수정본/);
+  assert.doesNotMatch(buildPrompt({ concept: '', request: 'r', extra: '', work: 'w', episode: 'e', memo: 'm', text: 't' }), /너의 역할/);
 });

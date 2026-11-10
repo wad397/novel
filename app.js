@@ -1,7 +1,7 @@
 import * as drive from './drive.js';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
-  countText, assist, isConflict, sanitizeTitle,
+  countText, assist, diff, extractRevision, buildPrompt, isConflict, sanitizeTitle,
 } from './logic.js';
 
 // 구글 클라우드 콘솔에서 만든 OAuth 클라이언트 ID (README 참고)
@@ -35,6 +35,8 @@ const loadSettings = (key, defaults) => {
 };
 const countSettings = loadSettings(COUNT_KEY, COUNT_DEFAULT);
 const inputSettings = loadSettings(INPUT_KEY, INPUT_DEFAULT);
+const AI_KEY = 'ai-settings';
+const aiSettings = loadSettings(AI_KEY, { concept: '' });
 const displayName = (name) => (name === SETTINGS ? '설정 메모' : parseEpisodeName(name)?.title ?? name.replace(/\.md$/, ''));
 
 // ---------- 로그인 ----------
@@ -189,6 +191,7 @@ async function showEditor(folderId, fileId) {
           <h1 id="title"></h1>
           <p class="status" id="status"></p>
           <p class="tools">${isEpisode ? '<button id="rename" class="link">제목 바꾸기</button><button id="delete" class="link">휴지통으로</button>' : ''}<button class="link open-settings">설정</button></p>
+          <p class="ai-tools"><button type="button" class="open-ask">Claude에게 묻기</button><button type="button" class="open-apply">수정본 반영</button></p>
           <p class="no" id="no"></p>
         </div>
         ${memoFile ? `<div class="plaque memo-card">
@@ -207,7 +210,7 @@ async function showEditor(folderId, fileId) {
     </div>`;
   const ta = $app.querySelector('#text');
   ta.value = text;
-  editing = { folderId, fileId, name: meta.name, modifiedTime: meta.modifiedTime, dirty, timer: null, saving: false, pending: false, ta, lastCount: null };
+  editing = { folderId, fileId, name: meta.name, modifiedTime: meta.modifiedTime, dirty, timer: null, saving: false, pending: false, ta, lastCount: null, work: folder.name, memo: memo ?? '' };
   renderHead();
   setStatus(dirty ? 'typing' : 'saved');
   if (dirty) save();
@@ -218,12 +221,7 @@ async function showEditor(folderId, fileId) {
     const r = key && assist(ta.value, ta.selectionStart, ta.selectionEnd, key, inputSettings);
     if (!r) return;
     e.preventDefault();
-    ta.setSelectionRange(r.from, r.to);
-    // execCommand는 되돌리기(Ctrl+Z) 기록을 남긴다. 안 되는 브라우저에서는 직접 바꾼다.
-    if (r.insert && !document.execCommand('insertText', false, r.insert)) {
-      ta.setRangeText(r.insert, r.from, r.to, 'end');
-      ta.dispatchEvent(new Event('input'));
-    }
+    if (r.insert) replaceText(ta, r.from, r.to, r.insert);
     ta.setSelectionRange(r.cursor, r.cursor);
   });
   ta.oninput = () => {
@@ -249,6 +247,15 @@ function memoHtml(text) {
   }).join('');
 }
 
+// execCommand는 되돌리기(Ctrl+Z) 기록을 남긴다. 안 되는 브라우저에서는 직접 바꾼다.
+function replaceText(ta, from, to, text) {
+  ta.setSelectionRange(from, to);
+  if (!document.execCommand('insertText', false, text)) {
+    ta.setRangeText(text, from, to, 'end');
+    ta.dispatchEvent(new Event('input'));
+  }
+}
+
 function renderHead() {
   const ep = parseEpisodeName(editing.name);
   const no = $app.querySelector('#no');
@@ -269,13 +276,16 @@ function setupSettings() {
   for (const k of ['noSpaces', 'noPunct', 'noSymbols', 'noComments', 'celebrate']) f[k].checked = countSettings[k];
   f.goal.value = countSettings.goal;
   for (const k of Object.keys(INPUT_DEFAULT)) f[k].checked = inputSettings[k];
+  f.aiConcept.value = aiSettings.concept;
   f.oninput = () => {
     Object.assign(countSettings, {
       unit: f.unit.value, noSpaces: f.noSpaces.checked, noPunct: f.noPunct.checked, noSymbols: f.noSymbols.checked,
       noComments: f.noComments.checked, celebrate: f.celebrate.checked, goal: Math.max(0, Math.floor(Number(f.goal.value) || 0)),
     });
     for (const k of Object.keys(INPUT_DEFAULT)) inputSettings[k] = f[k].checked;
+    aiSettings.concept = f.aiConcept.value;
     try {
+      localStorage.setItem(AI_KEY, JSON.stringify(aiSettings));
       localStorage.setItem(COUNT_KEY, JSON.stringify(countSettings));
       localStorage.setItem(INPUT_KEY, JSON.stringify(inputSettings));
     } catch { /* 이번 방문에만 적용 */ }
@@ -286,6 +296,132 @@ function setupSettings() {
   // 바깥(어두운 부분)을 누르면 닫기
   $settings.addEventListener('click', (e) => { if (e.target === $settings) $settings.close(); });
   document.addEventListener('click', (e) => { if (e.target.closest('.open-settings')) $settings.showModal(); });
+}
+
+// ---------- Claude에게 묻기 ----------
+const PRESETS = {
+  feedback: '이 회차를 읽고 좋은 점과 고칠 점을 구체적으로 알려줘. 원고는 고치지 말고 의견만 줘.',
+  check: '설정 메모와 어긋나거나 앞뒤가 맞지 않는 부분을 찾아서, 해당 문장을 인용하고 왜 어긋나는지 알려줘.',
+  polish: '문체와 내용은 그대로 두고 어색한 문장, 맞춤법, 띄어쓰기를 고쳐줘.',
+  continue: '이 회차 마지막 장면에서 자연스럽게 이어지는 다음 장면 초안을 써줘.',
+  free: '',
+};
+const $ask = document.getElementById('ask');
+const $apply = document.getElementById('apply');
+
+function setupAi() {
+  const af = document.getElementById('ask-form');
+  const done = document.getElementById('ask-done');
+  const open = document.getElementById('ask-open');
+  document.getElementById('ask-copy').onclick = async () => {
+    if (af.preset.value === 'free' && !af.extra.value.trim()) {
+      done.textContent = '덧붙일 말에 부탁할 내용을 적어 주세요.';
+      return;
+    }
+    const ep = parseEpisodeName(editing.name);
+    const text = buildPrompt({
+      concept: aiSettings.concept, request: PRESETS[af.preset.value], extra: af.extra.value, work: editing.work,
+      episode: ep ? `${ep.num}화 ${ep.title}` : displayName(editing.name), memo: editing.memo, text: editing.ta.value,
+    });
+    done.textContent = (await copyText(text, $ask))
+      ? '복사했어요. Claude를 열고 입력칸에 붙여 넣어 보내세요.'
+      : '복사하지 못했어요. 브라우저의 클립보드 권한을 확인해 주세요.';
+    open.hidden = false;
+  };
+
+  const pf = document.getElementById('apply-form');
+  const summary = document.getElementById('apply-summary');
+  const preview = document.getElementById('apply-preview');
+  const ok = document.getElementById('apply-ok');
+  const show = () => {
+    const { body } = extractRevision(pf.pasted.value);
+    preview.hidden = !body;
+    ok.disabled = !body;
+    if (!body) { summary.textContent = ''; return; }
+    if (pf.mode.value === 'append') {
+      preview.innerHTML = `<p class="add">${esc(body).replace(/\n/g, '<br>')}</p>`;
+      summary.textContent = `원고 끝에 ${countText(body).toLocaleString()}자를 붙여요.`;
+      return;
+    }
+    const { html, changes } = renderDiff(editing.ta.value, body);
+    preview.innerHTML = html;
+    ok.disabled = changes === 0;
+    summary.textContent = changes ? `바뀐 곳 ${changes}군데. 지운 글은 줄을 긋고, 새 글은 색을 칠해 보여 줘요.` : '지금 원고와 같아요.';
+  };
+  pf.pasted.oninput = () => {
+    const { mode } = extractRevision(pf.pasted.value);
+    if (mode) pf.mode.value = mode; // 답 속 블록 종류에 맞춰 자동 선택
+    show();
+  };
+  for (const r of pf.mode) r.onchange = show;
+  ok.onclick = () => {
+    const { body } = extractRevision(pf.pasted.value);
+    const ta = editing.ta;
+    $apply.close(); // 창이 열려 있으면 원고에 입력할 수 없다
+    ta.focus();
+    if (pf.mode.value === 'replace') replaceText(ta, 0, ta.value.length, body);
+    else {
+      const v = ta.value;
+      const sep = !v.trim() ? '' : v.endsWith('\n\n') ? '' : v.endsWith('\n') ? '\n' : '\n\n';
+      replaceText(ta, v.length, v.length, sep + body);
+    }
+    pf.pasted.value = '';
+  };
+
+  document.addEventListener('click', (e) => {
+    if (!editing) return;
+    if (e.target.closest('.open-ask')) {
+      done.textContent = '';
+      open.hidden = true;
+      $ask.showModal();
+    } else if (e.target.closest('.open-apply')) {
+      show();
+      $apply.showModal();
+    }
+  });
+  for (const d of [$ask, $apply]) d.addEventListener('click', (e) => { if (e.target === d) d.close(); });
+}
+
+async function copyText(text, container) {
+  try { await navigator.clipboard.writeText(text); return true; } catch { /* 아래 방법으로 */ }
+  const t = document.createElement('textarea');
+  t.value = text;
+  t.setAttribute('readonly', '');
+  t.style.cssText = 'position:fixed;opacity:0';
+  container.append(t); // 열린 창 안에 있어야 선택된다
+  t.select();
+  const ok = document.execCommand('copy');
+  t.remove();
+  return ok;
+}
+
+// 원고와 수정본의 바뀐 문단만 보여 준다. 짝이 맞는 문단은 낱말 단위로 표시.
+function renderDiff(before, after) {
+  const ops = diff(before.split('\n'), after.split('\n'));
+  const words = (s) => s.split(/(\s+)/).filter(Boolean);
+  const out = [];
+  let changes = 0;
+  for (let i = 0; i < ops.length;) {
+    if (ops[i].t === '=') {
+      let n = 0;
+      while (i < ops.length && ops[i].t === '=') { if (ops[i].v.trim()) n++; i++; }
+      if (n) out.push(`<p class="gap">바뀌지 않은 문단 ${n}개</p>`);
+      continue;
+    }
+    const del = [], add = [];
+    while (i < ops.length && ops[i].t !== '=') { (ops[i].t === '-' ? del : add).push(ops[i].v); i++; }
+    const d = del.filter((v) => v.trim()), a = add.filter((v) => v.trim());
+    if (!d.length && !a.length) continue; // 빈 줄만 바뀜
+    changes++;
+    for (let k = 0; k < Math.max(d.length, a.length); k++) {
+      if (k < d.length && k < a.length) {
+        out.push(`<p>${diff(words(d[k]), words(a[k])).map((o) =>
+          o.t === '=' ? esc(o.v) : o.t === '-' ? `<del>${esc(o.v)}</del>` : `<ins>${esc(o.v)}</ins>`).join('')}</p>`);
+      } else if (k < d.length) out.push(`<p class="del">${esc(d[k])}</p>`);
+      else out.push(`<p class="add">${esc(a[k])}</p>`);
+    }
+  }
+  return { html: out.join(''), changes };
 }
 
 const showGoalUnit = () => { document.getElementById('goal-unit').textContent = UNITS[countSettings.unit][1]; };
@@ -403,6 +539,7 @@ async function start() {
   }
   await new Promise((r) => { const t = setInterval(() => { if (window.google?.accounts?.oauth2) { clearInterval(t); r(); } }, 50); });
   setupSettings();
+  setupAi();
   tokenClient = google.accounts.oauth2.initTokenClient({ client_id: CLIENT_ID, scope: SCOPE, callback: () => {} });
   window.onhashchange = () => { if (rootId) route(); };
   const token = savedToken();
