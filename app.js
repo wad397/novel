@@ -5,7 +5,7 @@ import {
 } from './logic.js';
 
 // 구글 클라우드 콘솔에서 만든 OAuth 클라이언트 ID (README 참고)
-const CLIENT_ID = '';
+const CLIENT_ID = '420828670170-ohu8mg6mndl2msllrgnb5tenbvvierag.apps.googleusercontent.com';
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const ROOT_NAME = '내소설';
 const SETTINGS = '설정.md';
