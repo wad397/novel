@@ -1,30 +1,100 @@
+/* 전시실: 차가운 회백색 벽에 원고 한 장이 걸려 있고, 옆에 작은 설명판이 붙는다.
+   강조색은 저장 상태의 빨간 점 하나뿐. */
 :root {
-  --bg: #faf8f4; --fg: #26231f; --muted: #8a847a; --line: #e4dfd6; --accent: #8a5a2b; --err: #b3261e;
-  color-scheme: light dark;
+  --wall: #e9eae7;      /* 전시실 벽 */
+  --sheet: #f7f7f5;     /* 걸린 원고 종이 */
+  --edge: #d3d5d0;      /* 종이 가장자리, 구분선 */
+  --ink: #24272b;       /* 본문 */
+  --caption: #676b70;   /* 설명판 글씨 */
+  --dot: #c23a2b;       /* 갤러리 빨간 점 */
+  --text: "Gowun Batang", "Nanum Myeongjo", "Noto Serif KR", serif;
+  --sign: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #1c1b19; --fg: #e8e4dc; --muted: #9a948a; --line: #34312c; --accent: #d9a46c; --err: #f2b8b5; }
+  :root { --wall: #1d1e20; --sheet: #26282b; --edge: #36393d; --ink: #dcddd9; --caption: #9a9ea3; --dot: #e0604f; color-scheme: dark; }
 }
+
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 system-ui, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
-main { max-width: 760px; margin: 0 auto; padding: 16px; }
-h1 { font-size: 1.4rem; margin: 4px 0 12px; }
-a { color: var(--accent); text-decoration: none; }
-.back { font-size: .9rem; }
-.muted { color: var(--muted); }
-.error { color: var(--err); }
-button { font: inherit; padding: 10px 16px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--fg); cursor: pointer; min-height: 44px; }
-button:hover { border-color: var(--accent); }
-.list { list-style: none; padding: 0; margin: 0 0 16px; }
-.list li { border-bottom: 1px solid var(--line); }
-.list a, .list .muted { display: block; padding: 14px 4px; }
-.settings a { display: inline-block; padding: 8px 12px; border: 1px dashed var(--line); border-radius: 8px; }
-.welcome { text-align: center; padding-top: 20vh; }
-.editor-head { position: sticky; top: 0; background: var(--bg); padding-bottom: 8px; border-bottom: 1px solid var(--line); z-index: 1; }
-.editor-head h1 { margin-bottom: 4px; }
-.tools { display: flex; gap: 8px; margin-bottom: 4px; }
-.tools button { padding: 4px 12px; min-height: 36px; font-size: .9rem; }
-.meta { font-size: .85rem; color: var(--muted); }
-#text { display: block; width: 100%; min-height: 70vh; margin-top: 12px; border: 0; outline: 0; resize: none; background: transparent; color: var(--fg); font: 18px/1.9 "Noto Serif KR", "Nanum Myeongjo", Georgia, serif; field-sizing: content; }
-#login-banner { position: sticky; top: 0; z-index: 2; padding: 10px 16px; background: var(--err); color: #fff; text-align: center; }
-#login-banner button { color: #fff; border-color: #fff; min-height: 36px; padding: 4px 12px; margin-left: 8px; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--wall); color: var(--ink); font: 15px/1.6 var(--sign); }
+main { max-width: 1080px; margin: 0 auto; padding: 48px max(20px, env(safe-area-inset-right)) 96px max(20px, env(safe-area-inset-left)); }
+a { color: inherit; }
+h1 { margin: 0; font: 400 2rem/1.25 var(--text); letter-spacing: -0.01em; text-wrap: balance; }
+p { margin: 0; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+
+/* 공통 */
+.quiet { color: var(--caption); font-size: .9rem; }
+.error { color: var(--dot); margin-bottom: 8px; }
+.place { display: inline-block; color: var(--caption); font-size: .9rem; text-decoration: none; margin-bottom: 6px; }
+a.place:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+.date { color: var(--caption); font-size: .85rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.empty { color: var(--caption); padding: 20px 0; }
+button { font: inherit; color: inherit; cursor: pointer; }
+.act { margin-top: 28px; padding: 10px 18px; background: var(--ink); color: var(--wall); border: 0; border-radius: 2px; font-size: .95rem; min-height: 44px; }
+.act:hover { opacity: .85; }
+.link { padding: 6px 0; border: 0; background: none; color: var(--caption); font-size: .85rem; text-decoration: underline; text-underline-offset: 3px; }
+.link:hover { color: var(--ink); }
+#delete:hover { color: var(--dot); }
+
+/* 입구 */
+.entrance { max-width: 34rem; padding-top: 14vh; }
+.entrance h1 { font-size: 3.2rem; margin-bottom: 20px; }
+.entrance p { font-family: var(--text); font-size: 1.05rem; line-height: 1.9; color: var(--caption); }
+
+/* 작품·회차 목록 */
+.page-head { max-width: 46rem; margin-bottom: 32px; }
+.works, .episodes { list-style: none; margin: 0; padding: 0; max-width: 46rem; border-top: 1px solid var(--edge); }
+.works li, .episodes li { border-bottom: 1px solid var(--edge); }
+.works a, .episodes a { display: grid; align-items: baseline; gap: 16px; padding: 16px 2px; text-decoration: none; }
+.works a { grid-template-columns: 1fr auto; padding-block: 22px; }
+.work-title { font: 1.35rem/1.4 var(--text); }
+.episodes a { grid-template-columns: 3.2em 1fr auto; }
+.episodes .no { color: var(--caption); font-variant-numeric: tabular-nums; font-size: .9rem; }
+.ep-title { font: 1.1rem/1.5 var(--text); min-width: 0; overflow-wrap: anywhere; }
+.works a:hover .work-title, .episodes a:hover .ep-title { text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 1px; }
+.memo { max-width: 46rem; margin-bottom: 24px; color: var(--caption); font-size: .9rem; }
+.memo a { color: var(--ink); font-family: var(--text); font-size: 1.05rem; margin-right: 10px; text-underline-offset: 3px; }
+
+/* 편집기: 원고 한 장 + 오른쪽 설명판 */
+.room { display: grid; grid-template-columns: minmax(0, 44rem) 13rem; gap: 48px; justify-content: center; align-items: start; }
+.room > .sheet { grid-column: 1; grid-row: 1; }
+.room > .label { grid-column: 2; grid-row: 1; }
+.sheet { background: var(--sheet); border: 1px solid var(--edge); padding: 56px 64px; min-height: 80vh; }
+#text { display: block; width: 100%; min-height: 70vh; border: 0; outline: 0; resize: none; padding: 0; background: transparent; color: var(--ink); font: 1.125rem/2 var(--text); field-sizing: content; }
+#text::placeholder { color: var(--caption); opacity: .7; }
+.label { position: sticky; top: 48px; display: grid; gap: 4px; padding-top: 4px; font-size: .9rem; }
+.label .no { color: var(--caption); font-variant-numeric: tabular-nums; }
+.label h1 { font-size: 1.35rem; margin-bottom: 14px; overflow-wrap: anywhere; }
+.count { font-variant-numeric: tabular-nums; }
+.count span { color: var(--caption); }
+.status { display: flex; align-items: center; gap: 8px; margin-top: 14px; color: var(--caption); }
+.status::before { content: ""; flex: none; width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--dot); }
+.status[data-state="saved"]::before { background: var(--dot); }
+.status[data-state="saving"]::before { background: linear-gradient(90deg, var(--dot) 50%, transparent 50%); }
+.status[data-state="failed"] { color: var(--dot); }
+.tools { display: flex; gap: 16px; margin-top: 18px; }
+
+/* 로그인 만료 알림 */
+#login-banner { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px 16px; padding: 10px max(20px, env(safe-area-inset-right)); background: var(--ink); color: var(--wall); font-size: .9rem; }
+#login-banner[hidden] { display: none; }
+#login-banner button { padding: 4px 12px; border: 1px solid var(--wall); border-radius: 2px; background: none; color: var(--wall); }
+
+/* 휴대폰: 설명판은 원고 위에 한 줄로 */
+@media (max-width: 820px) {
+  main { padding-top: 24px; }
+  .room { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .room > .sheet, .room > .label { grid-column: 1; grid-row: auto; }
+  .label { position: static; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 0; }
+  .label .place, .label .no, .label h1 { grid-column: 1 / -1; }
+  .label h1 { margin-bottom: 6px; }
+  .count br { display: none; }
+  .count span { margin-left: 6px; }
+  .status { margin-top: 0; }
+  .tools { grid-column: 1 / -1; margin-top: 4px; }
+  .sheet { padding: 28px 22px; min-height: 70vh; }
+  #text { font-size: 1.0625rem; line-height: 1.95; min-height: 60vh; }
+  .entrance h1 { font-size: 2.6rem; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

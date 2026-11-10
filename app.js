@@ -23,6 +23,8 @@ const store = {
   set(id, text) { try { localStorage.setItem(draftKey(id), JSON.stringify({ text, at: Date.now() })); } catch { /* 저장 공간 없음: 드라이브 저장에만 의존 */ } },
   del(id) { try { localStorage.removeItem(draftKey(id)); } catch { /* 무시 */ } },
 };
+const day = (iso) => new Date(iso).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
+const LOADING = '<p class="quiet">불러오는 중</p>';
 const displayName = (name) => (name === SETTINGS ? '설정 메모' : parseEpisodeName(name)?.title ?? name.replace(/\.md$/, ''));
 
 // ---------- 로그인 ----------
@@ -48,7 +50,7 @@ $banner.querySelector('button').onclick = async () => {
 
 function failed(e, retry) {
   if (e.status === 401) return needLogin();
-  $app.innerHTML = `<p class="error">불러오지 못했어요. ${esc(e.message)}</p><button id="retry">다시 시도</button>`;
+  $app.innerHTML = `<p class="error">드라이브에서 불러오지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.</p><p class="quiet">${esc(e.message)}</p><button id="retry" class="act">다시 시도</button>`;
   $app.querySelector('#retry').onclick = retry;
 }
 
@@ -64,14 +66,14 @@ async function route() {
 }
 
 async function showNovels() {
-  $app.innerHTML = '<p class="muted">불러오는 중…</p>';
+  $app.innerHTML = LOADING;
   const items = (await drive.listChildren(rootId))
     .filter((f) => f.mimeType === 'application/vnd.google-apps.folder')
     .sort((x, y) => x.name.localeCompare(y.name, 'ko'));
   $app.innerHTML = `
-    <header><h1>내 작품</h1></header>
-    <ul class="list">${items.map((f) => `<li><a href="#/n/${f.id}">${esc(f.name)}</a></li>`).join('') || '<li class="muted">아직 작품이 없어요.</li>'}</ul>
-    <button id="add">+ 새 작품</button>`;
+    <header class="page-head"><p class="place">집필</p><h1>작품</h1></header>
+    <ul class="works">${items.map((f) => `<li><a href="#/n/${f.id}"><span class="work-title">${esc(f.name)}</span><span class="date">${day(f.modifiedTime)} 수정</span></a></li>`).join('') || '<li class="empty">아직 작품이 없어요. 첫 작품을 만들어 보세요.</li>'}</ul>
+    <button id="add" class="act">새 작품 만들기</button>`;
   $app.querySelector('#add').onclick = async () => {
     const title = prompt('작품 제목');
     if (title === null) return;
@@ -84,18 +86,21 @@ async function showNovels() {
 }
 
 async function showNovel(folderId) {
-  $app.innerHTML = '<p class="muted">불러오는 중…</p>';
+  $app.innerHTML = LOADING;
   const [folder, files] = await Promise.all([drive.getMeta(folderId), drive.listChildren(folderId)]);
   const md = files.filter((f) => f.name.endsWith('.md'));
   const settings = md.find((f) => f.name === SETTINGS);
   const episodes = md.filter((f) => f !== settings).sort((x, y) =>
     (parseEpisodeName(x.name)?.num ?? Infinity) - (parseEpisodeName(y.name)?.num ?? Infinity) || x.name.replace(/\.md$/, '').localeCompare(y.name.replace(/\.md$/, ''), 'ko'));
-  const link = (f) => `<a href="#/e/${folderId}/${f.id}">${esc(parseEpisodeName(f.name) ? f.name.replace(/\.md$/, '') : displayName(f.name))}</a>`;
+  const row = (f) => {
+    const ep = parseEpisodeName(f.name);
+    return `<li><a href="#/e/${folderId}/${f.id}"><span class="no">${ep ? String(ep.num).padStart(3, '0') : ''}</span><span class="ep-title">${esc(ep ? ep.title : displayName(f.name))}</span><span class="date">${day(f.modifiedTime)}</span></a></li>`;
+  };
   $app.innerHTML = `
-    <header><a href="#/" class="back">← 작품 목록</a><h1>${esc(folder.name)}</h1></header>
-    ${settings ? `<p class="settings">${link(settings)}</p>` : ''}
-    <ul class="list">${episodes.map((f) => `<li>${link(f)}</li>`).join('') || '<li class="muted">아직 회차가 없어요.</li>'}</ul>
-    <button id="add">+ 새 회차</button>`;
+    <header class="page-head"><a href="#/" class="place">작품</a><h1>${esc(folder.name)}</h1></header>
+    ${settings ? `<p class="memo"><a href="#/e/${folderId}/${settings.id}">설정 메모</a> 인물과 세계관을 적어 두는 곳</p>` : ''}
+    <ol class="episodes">${episodes.map(row).join('') || '<li class="empty">아직 회차가 없어요. 첫 회차를 만들어 보세요.</li>'}</ol>
+    <button id="add" class="act">새 회차 만들기</button>`;
   $app.querySelector('#add').onclick = async () => {
     const title = prompt('회차 제목');
     if (title === null) return;
@@ -108,8 +113,8 @@ async function showNovel(folderId) {
 }
 
 async function showEditor(folderId, fileId) {
-  $app.innerHTML = '<p class="muted">불러오는 중…</p>';
-  const [meta, remote] = await Promise.all([drive.getMeta(fileId), drive.readText(fileId)]);
+  $app.innerHTML = LOADING;
+  const [meta, remote, folder] = await Promise.all([drive.getMeta(fileId), drive.readText(fileId), drive.getMeta(folderId)]);
   let text = remote, dirty = false;
   const draft = store.get(fileId);
   if (draft && draft.text !== remote) {
@@ -120,27 +125,29 @@ async function showEditor(folderId, fileId) {
 
   const isEpisode = !!parseEpisodeName(meta.name);
   $app.innerHTML = `
-    <header class="editor-head">
-      <a href="#/n/${folderId}" class="back">← 회차 목록</a>
-      <h1 id="title"></h1>
-      <div class="tools">
-        ${isEpisode ? '<button id="rename">제목 변경</button><button id="delete">삭제</button>' : ''}
-      </div>
-      <div class="meta"><span id="status"></span> · <span id="count"></span></div>
-    </header>
-    <textarea id="text" spellcheck="false" placeholder="여기에 쓰세요"></textarea>`;
+    <div class="room">
+      <aside class="label">
+        <a href="#/n/${folderId}" class="place">${esc(folder.name)}</a>
+        <p class="no" id="no"></p>
+        <h1 id="title"></h1>
+        <p class="count" id="count"></p>
+        <p class="status" id="status"></p>
+        ${isEpisode ? '<p class="tools"><button id="rename" class="link">제목 바꾸기</button><button id="delete" class="link">휴지통으로</button></p>' : ''}
+      </aside>
+      <div class="sheet"><textarea id="text" spellcheck="false" placeholder="첫 문장을 써 보세요" aria-label="원고"></textarea></div>
+    </div>`;
   const ta = $app.querySelector('#text');
   ta.value = text;
   editing = { folderId, fileId, name: meta.name, modifiedTime: meta.modifiedTime, dirty, timer: null, saving: false, pending: false, ta };
   renderHead();
-  setStatus(dirty ? '저장 안 됨' : '저장됨');
+  setStatus(dirty ? 'typing' : 'saved');
   if (dirty) save();
 
   ta.oninput = () => {
     editing.dirty = true;
     store.set(editing.fileId, ta.value);
     updateCount();
-    setStatus('입력 중');
+    setStatus('typing');
     clearTimeout(editing.timer);
     editing.timer = setTimeout(save, SAVE_DELAY);
   };
@@ -149,6 +156,8 @@ async function showEditor(folderId, fileId) {
 }
 
 function renderHead() {
+  const ep = parseEpisodeName(editing.name);
+  $app.querySelector('#no').textContent = ep ? `${ep.num}화` : '';
   $app.querySelector('#title').textContent = displayName(editing.name);
   document.title = `${displayName(editing.name)} - 집필`;
   updateCount();
@@ -156,10 +165,14 @@ function renderHead() {
 
 function updateCount() {
   const c = countChars(editing.ta.value);
-  $app.querySelector('#count').textContent = `${c.withSpaces.toLocaleString()}자 (공백 제외 ${c.withoutSpaces.toLocaleString()}자)`;
+  $app.querySelector('#count').innerHTML = `${c.withSpaces.toLocaleString()}자<br><span>공백 빼고 ${c.withoutSpaces.toLocaleString()}자</span>`;
 }
 
-const setStatus = (s) => { const el = $app.querySelector('#status'); if (el) el.textContent = s; };
+const STATUS = { saved: '저장됨', typing: '쓰는 중', saving: '저장하는 중', failed: '저장 안 됨, 이 기기에 보관 중' };
+const setStatus = (state) => {
+  const el = $app.querySelector('#status');
+  if (el) { el.dataset.state = state; el.textContent = STATUS[state]; }
+};
 
 // ---------- 저장 ----------
 async function save(ed = editing) {
@@ -168,7 +181,7 @@ async function save(ed = editing) {
   if (ed.saving) { ed.pending = true; return; }
   ed.saving = true;
   const text = ed.ta.value;
-  if (editing === ed) setStatus('저장 중…');
+  if (editing === ed) setStatus('saving');
   try {
     const current = await drive.getMeta(ed.fileId);
     if (isConflict(ed.modifiedTime, current.modifiedTime)) {
@@ -185,10 +198,10 @@ async function save(ed = editing) {
       ed.modifiedTime = (await drive.updateText(ed.fileId, text)).modifiedTime;
     }
     if (ed.ta.value === text) { ed.dirty = false; store.del(ed.fileId); }
-    if (editing === ed) setStatus(ed.dirty ? '입력 중' : '저장됨');
+    if (editing === ed) setStatus(ed.dirty ? 'typing' : 'saved');
   } catch (e) {
     store.set(ed.fileId, ed.ta.value);
-    if (editing === ed) setStatus('저장 안 됨 (이 기기에 보관 중)');
+    if (editing === ed) setStatus('failed');
     if (e.status === 401) needLogin();
     else ed.timer = setTimeout(() => save(ed), 10000);
   } finally {
@@ -237,7 +250,12 @@ async function start() {
   }
   await new Promise((r) => { const t = setInterval(() => { if (window.google?.accounts?.oauth2) { clearInterval(t); r(); } }, 50); });
   tokenClient = google.accounts.oauth2.initTokenClient({ client_id: CLIENT_ID, scope: SCOPE, callback: () => {} });
-  $app.innerHTML = '<div class="welcome"><h1>집필</h1><p>원고는 내 구글 드라이브의 "내소설" 폴더에 저장돼요.</p><button id="go">구글로 로그인</button></div>';
+  $app.innerHTML = `
+    <div class="entrance">
+      <h1>집필</h1>
+      <p>쓰는 글은 내 구글 드라이브의 내소설 폴더에 회차별로 보관돼요. 집 컴퓨터와 휴대폰 어디서 열어도 같은 원고가 이어져요.</p>
+      <button id="go" class="act">구글 계정으로 들어가기</button>
+    </div>`;
   $app.querySelector('#go').onclick = async () => {
     try {
       drive.setToken((await login()).access_token);
