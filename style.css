@@ -1,0 +1,30 @@
+:root {
+  --bg: #faf8f4; --fg: #26231f; --muted: #8a847a; --line: #e4dfd6; --accent: #8a5a2b; --err: #b3261e;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #1c1b19; --fg: #e8e4dc; --muted: #9a948a; --line: #34312c; --accent: #d9a46c; --err: #f2b8b5; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 system-ui, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
+main { max-width: 760px; margin: 0 auto; padding: 16px; }
+h1 { font-size: 1.4rem; margin: 4px 0 12px; }
+a { color: var(--accent); text-decoration: none; }
+.back { font-size: .9rem; }
+.muted { color: var(--muted); }
+.error { color: var(--err); }
+button { font: inherit; padding: 10px 16px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--fg); cursor: pointer; min-height: 44px; }
+button:hover { border-color: var(--accent); }
+.list { list-style: none; padding: 0; margin: 0 0 16px; }
+.list li { border-bottom: 1px solid var(--line); }
+.list a, .list .muted { display: block; padding: 14px 4px; }
+.settings a { display: inline-block; padding: 8px 12px; border: 1px dashed var(--line); border-radius: 8px; }
+.welcome { text-align: center; padding-top: 20vh; }
+.editor-head { position: sticky; top: 0; background: var(--bg); padding-bottom: 8px; border-bottom: 1px solid var(--line); z-index: 1; }
+.editor-head h1 { margin-bottom: 4px; }
+.tools { display: flex; gap: 8px; margin-bottom: 4px; }
+.tools button { padding: 4px 12px; min-height: 36px; font-size: .9rem; }
+.meta { font-size: .85rem; color: var(--muted); }
+#text { display: block; width: 100%; min-height: 70vh; margin-top: 12px; border: 0; outline: 0; resize: none; background: transparent; color: var(--fg); font: 18px/1.9 "Noto Serif KR", "Nanum Myeongjo", Georgia, serif; field-sizing: content; }
+#login-banner { position: sticky; top: 0; z-index: 2; padding: 10px 16px; background: var(--err); color: #fff; text-align: center; }
+#login-banner button { color: #fff; border-color: #fff; min-height: 36px; padding: 4px 12px; margin-left: 8px; }
