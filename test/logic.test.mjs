@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
-  episodeNoteName, parseNoteName, episodeTemplate, countText, assist, diff, extractRevision, buildPrompt, isConflict, escapeQuery, sanitizeTitle,
+  episodeNoteName, parseNoteName, episodeTemplate, tableCells, countText, assist, diff, extractRevision, buildPrompt, isConflict, escapeQuery, sanitizeTitle,
 } from '../logic.js';
 
 test('회차 파일 이름', () => {
@@ -133,5 +133,13 @@ test('회차별 설정 파일 이름', () => {
   assert.equal(parseNoteName('설정.md'), null);
   assert.equal(parseNoteName('003 - 설정.md'), null);
   assert.equal(parseEpisodeName(episodeNoteName(3)), null); // 회차 목록·번호 매기기에 끼지 않는다
-  assert.match(episodeTemplate(3), /^# 3화 요청서/);
+  assert.match(episodeTemplate(3), /^# 3화 설정/);
+  assert.match(episodeTemplate(3), /\| 몇 화 \| 3화 \|/);
+});
+
+test('표 한 줄 읽기', () => {
+  assert.deepEqual(tableCells('| 가제 | 재능은 애매하지 않다 |'), ['가제', '재능은 애매하지 않다']);
+  assert.deepEqual(tableCells('| 직전 화 |  |'), ['직전 화', '']);
+  assert.equal(tableCells('|---|:--|'), null);
+  assert.equal(tableCells('| --- | --- |'), null);
 });

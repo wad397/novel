@@ -1,7 +1,7 @@
 import * as drive from './drive.js';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
-  episodeNoteName, parseNoteName, WORK_TEMPLATE, episodeTemplate,
+  episodeNoteName, parseNoteName, WORK_TEMPLATE, episodeTemplate, tableCells,
   countText, assist, diff, extractRevision, buildPrompt, isConflict, sanitizeTitle,
 } from './logic.js';
 
@@ -248,15 +248,32 @@ async function showEditor(folderId, fileId) {
   $app.querySelector('#delete')?.addEventListener('click', deleteEpisode);
 }
 
-// 설정 메모를 설명 카드용 문단으로. "# 제목" 줄은 작은 소제목으로.
+// 설정 메모를 설명 카드용으로. "# 제목"은 소제목, 표는 항목·내용 짝으로 그린다.
 function memoHtml(text) {
-  const blocks = text.trim().split(/\n\s*\n/).filter(Boolean);
-  if (!blocks.length) return '<p class="quiet">아직 비어 있어요. 인물과 세계관을 적어 두면 여기에 보여요.</p>';
-  return blocks.map((b) => {
-    const lines = b.split('\n');
-    const head = /^#+\s/.test(lines[0]) ? `<h4>${esc(lines.shift().replace(/^#+\s*/, ''))}</h4>` : '';
-    return head + (lines.length ? `<p>${lines.map(esc).join('<br>')}</p>` : '');
-  }).join('');
+  const lines = text.trim().split('\n');
+  if (!text.trim()) return '<p class="quiet">아직 비어 있어요. 인물과 세계관을 적어 두면 여기에 보여요.</p>';
+  const out = [];
+  for (let i = 0; i < lines.length;) {
+    const line = lines[i];
+    if (!line.trim()) { i++; continue; }
+    if (/^#+\s/.test(line)) { out.push(`<h4>${esc(line.replace(/^#+\s*/, ''))}</h4>`); i++; continue; }
+    const block = [];
+    const isTable = line.trimStart().startsWith('|');
+    while (i < lines.length && lines[i].trim() && !/^#+\s/.test(lines[i]) && lines[i].trimStart().startsWith('|') === isTable) block.push(lines[i++]);
+    if (!isTable) { out.push(`<p>${block.map(esc).join('<br>')}</p>`); continue; }
+    const [head, ...rows] = block.map(tableCells).filter(Boolean);
+    const val = (v) => (v ? esc(v) : '<span class="quiet">—</span>');
+    if (head.length === 2) {
+      out.push(`<dl>${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${val(v)}</dd>`).join('')}</dl>`);
+    } else {
+      // 칸이 많은 표(인물 카드)는 좁은 설명판에 맞게 한 줄을 카드 하나로
+      const filled = rows.filter((r) => r.some(Boolean));
+      out.push(filled.length
+        ? filled.map(([name, ...rest]) => `<dl class="card"><dt class="name">${val(name)}</dt>${rest.map((v, k) => (v ? `<dt>${esc(head[k + 1] ?? '')}</dt><dd>${esc(v)}</dd>` : '')).join('')}</dl>`).join('')
+        : '<p class="quiet">—</p>');
+    }
+  }
+  return out.join('');
 }
 
 // execCommand는 되돌리기(Ctrl+Z) 기록을 남긴다. 안 되는 브라우저에서는 직접 바꾼다.

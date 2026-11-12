@@ -86,6 +86,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .memo-body { min-height: 0; overflow-y: auto; font-size: .75rem; line-height: 1.75; overflow-wrap: anywhere; }
 .memo-body h4 { margin: 0 0 2px; font-size: .78rem; font-weight: 600; }
 .memo-body p + p, .memo-body p + h4 { margin-top: .9em; }
+.memo-body h4 + h4, .memo-body dl + h4, .memo-body dl + p { margin-top: .9em; }
+.memo-body dl { margin: 4px 0 0; }
+.memo-body dt { margin-top: .7em; font: 500 .68rem/1.4 var(--sign); color: var(--caption); }
+.memo-body dd { margin: 0; }
+.memo-body dl.card { margin-top: .8em; padding-left: 9px; border-left: 2px solid var(--edge); }
+.memo-body dl.card dt.name { margin-top: 0; font: 600 .78rem/1.5 var(--sign); color: var(--ink); }
 .memo-body .memo-head { font-size: .8rem; }
 .memo-body * + .memo-head { margin-top: 1.4em; padding-top: 1em; border-top: 1px solid var(--edge); }
 
