@@ -37,7 +37,7 @@ const loadSettings = (key, defaults) => {
 const countSettings = loadSettings(COUNT_KEY, COUNT_DEFAULT);
 const inputSettings = loadSettings(INPUT_KEY, INPUT_DEFAULT);
 const AI_KEY = 'ai-settings';
-const aiSettings = loadSettings(AI_KEY, { concept: '' });
+const aiSettings = loadSettings(AI_KEY, { concept: '', project: '' });
 const displayName = (name) => (name === SETTINGS ? '설정 메모' : parseNoteName(name) ? `${parseNoteName(name)}화 설정` : parseEpisodeName(name)?.title ?? name.replace(/\.md$/, ''));
 
 // ---------- 로그인 ----------
@@ -279,22 +279,29 @@ function memoHtml(text) {
 // 설정 파일을 칸으로 적는 화면. 원고 칸(ta)이 그대로 원본이고, 칸을 고칠 때마다 표 글자로 되돌려 넣는다.
 function setupForm(ta, box) {
   let blocks, mine = false;
-  const field = (b, r, c, v, label) => `<label class="f${c === 0 ? ' first' : ''}">${label ? `<span>${esc(label)}</span>` : ''}<textarea rows="1" data-b="${b}" data-r="${r}" data-c="${c}"${label ? '' : ` aria-label="${esc(blocks[b].cols[c])}"`}>${esc(v)}</textarea></label>`;
+  // 빈칸에 흐리게 보여 주는 예시. 파일에는 들어가지 않는다.
+  const EXAMPLES = {
+    '가제': '회귀한 하급 기사', '장르': '회귀 / 판타지', '핵심 재미 (한 줄)': '실력은 그대로라 꼼수로 버티는 맛',
+    '주인공이 끝까지 원하는 것': '가문 몰락을 막는 것', '참고작 / 비슷한 느낌': '○○의 템포, △△의 개그 톤',
+    '회당 분량': '공백 포함 5,000자', '시점': '1인칭 주인공', '피하고 싶은 것': '하렘, 과한 사이다',
+  };
   const render = () => {
     blocks = parseDoc(ta.value);
     box.innerHTML = blocks.map((b, i) => {
-      if (b.head) return /^#\s/.test(b.head) ? '' : `<h2>${esc(b.head.replace(/^#+\s*/, ''))}</h2>`;
+      if (b.head) return /^#\s/.test(b.head) ? `<h1>${esc(b.head.replace(/^#\s*/, ''))}</h1>` : `<h2>${esc(b.head.replace(/^#+\s*/, ''))}</h2>`;
       if (b.text !== undefined) {
         return /^\s*-(\s|$)/m.test(b.text)
           ? `<textarea class="free" rows="2" data-b="${i}" aria-label="내용">${esc(b.text)}</textarea>`
           : `<p class="hint">${b.text.split('\n').map(esc).join('<br>')}</p>`;
       }
-      // "항목 | 내용" 표는 항목이 이름표, 그 밖의 표는 한 줄이 카드 하나
-      if (b.cols.length === 2 && b.cols[0] === '항목') return `<div class="fields">${b.rows.map((r, k) => field(i, k, 1, r[1], r[0])).join('')}</div>`;
-      const pair = b.cols.length === 2;
-      return `${pair ? `<p class="cols"><span>${esc(b.cols[0])}</span><span>${esc(b.cols[1])}</span></p>` : ''}
-        ${b.rows.map((r, k) => `<div class="rowcard${pair ? ' pair' : ''}">${r.map((v, c) => field(i, k, c, v, pair ? '' : b.cols[c])).join('')}<button type="button" class="link" data-del="${i}" data-r="${k}">지우기</button></div>`).join('')}
-        <button type="button" class="link add" data-add="${i}">+ ${esc(pair ? '줄' : b.cols[0])} 추가</button>`;
+      // "항목 | 내용" 표는 첫 칸이 이름표라 고치지 못하고, 그 밖의 표는 줄을 늘리고 지울 수 있다
+      const fixed = b.cols[0] === '항목';
+      const cell = (r, k) => (v, c) => (fixed && c === 0 ? `<th scope="row">${esc(v)}</th>`
+        : `<td><textarea rows="1" data-b="${i}" data-r="${k}" data-c="${c}" aria-label="${esc(fixed ? `${r[0]} ${b.cols[c]}` : b.cols[c])}"${fixed && EXAMPLES[r[0]] ? ` placeholder="예: ${esc(EXAMPLES[r[0]])}"` : ''}>${esc(v)}</textarea></td>`);
+      return `<div class="tbl"><table${b.cols.length > 3 ? ` style="min-width:${b.cols.length * 5.5}rem"` : ''}>
+        <thead><tr>${b.cols.map((c) => `<th scope="col">${esc(c)}</th>`).join('')}${fixed ? '' : '<td></td>'}</tr></thead>
+        <tbody>${b.rows.map((r, k) => `<tr>${r.map(cell(r, k)).join('')}${fixed ? '' : `<td class="del"><button type="button" data-del="${i}" data-r="${k}" aria-label="이 줄 지우기">×</button></td>`}</tr>`).join('')}</tbody>
+      </table></div>${fixed ? '' : `<button type="button" class="link add" data-add="${i}">+ 줄 추가</button>`}`;
     }).join('');
   };
   const commit = () => {
@@ -357,6 +364,7 @@ function setupSettings() {
   f.goal.value = countSettings.goal;
   for (const k of Object.keys(INPUT_DEFAULT)) f[k].checked = inputSettings[k];
   f.aiConcept.value = aiSettings.concept;
+  f.aiProject.value = aiSettings.project;
   f.oninput = () => {
     Object.assign(countSettings, {
       unit: f.unit.value, noSpaces: f.noSpaces.checked, noPunct: f.noPunct.checked, noSymbols: f.noSymbols.checked,
@@ -364,6 +372,7 @@ function setupSettings() {
     });
     for (const k of Object.keys(INPUT_DEFAULT)) inputSettings[k] = f[k].checked;
     aiSettings.concept = f.aiConcept.value;
+    aiSettings.project = f.aiProject.value.trim();
     try {
       localStorage.setItem(AI_KEY, JSON.stringify(aiSettings));
       localStorage.setItem(COUNT_KEY, JSON.stringify(countSettings));
@@ -380,6 +389,10 @@ function setupSettings() {
 
 // ---------- Claude에게 묻기 ----------
 const PRESETS = {
+  write: '작품 설정과 이번 화 설정(회차 요청서)을 그대로 지켜서 이번 화 원고를 처음부터 끝까지 써줘. '
+    + '회당 분량, 시점, 피하고 싶은 것, 인물의 말버릇과 절대 안 하는 행동, 마지막 장면, 받은 원고 피드백을 모두 반영해. '
+    + '본문에 이미 쓴 글이 있으면 살려서 이어 가. 빈칸은 네가 정하고, 뭘 정했는지 코드 블록 밖에 짧게 적어줘. '
+    + '너의 역할에 적힌 말투는 설명할 때만 쓰고 원고 문체에는 섞지 마. 완성한 원고 전체를 ```수정본 블록 하나에 담아줘.',
   feedback: '이 회차를 읽고 좋은 점과 고칠 점을 구체적으로 알려줘. 원고는 고치지 말고 의견만 줘.',
   check: '설정 메모와 어긋나거나 앞뒤가 맞지 않는 부분을 찾아서, 해당 문장을 인용하고 왜 어긋나는지 알려줘.',
   polish: '문체와 내용은 그대로 두고 어색한 문장, 맞춤법, 띄어쓰기를 고쳐줘.',
@@ -406,6 +419,7 @@ function setupAi() {
     done.textContent = (await copyText(text, $ask))
       ? '복사했어요. Claude를 열고 입력칸에 붙여 넣어 보내세요.'
       : '복사하지 못했어요. 브라우저의 클립보드 권한을 확인해 주세요.';
+    open.href = aiSettings.project.startsWith('https://claude.ai/') ? aiSettings.project : 'https://claude.ai/new';
     open.hidden = false;
   };
 

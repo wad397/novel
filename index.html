@@ -61,6 +61,12 @@
         <textarea id="aiConcept" name="aiConcept" rows="5" placeholder="예: 너는 20년 차 장르소설 편집자 '윤 편집장'이다. 짧고 직설적으로 말하고, 칭찬 하나에 지적 둘을 섞는다. 독자가 지루해할 지점을 가장 먼저 짚는다."></textarea>
       </section>
 
+      <section>
+        <h3>Claude 프로젝트</h3>
+        <label class="field" for="aiProject"><span>프로젝트 주소<small>claude.ai에서 프로젝트를 열고 주소창의 주소를 붙여 넣으세요. "Claude 열기"가 늘 이 프로젝트를 열어요. 비워 두면 새 대화가 열려요.</small></span></label>
+        <input type="url" id="aiProject" name="aiProject" placeholder="https://claude.ai/project/…" inputmode="url">
+      </section>
+
       <p class="quiet">설정은 이 기기에만 저장돼요.</p>
     </form>
   </dialog>
@@ -72,6 +78,7 @@
         <button value="close" class="link">닫기</button>
       </header>
       <fieldset class="presets"><legend>무엇을 부탁할까요</legend>
+        <label><input type="radio" name="preset" value="write"> 설정대로 이번 화 쓰기</label>
         <label><input type="radio" name="preset" value="feedback" checked> 피드백 받기</label>
         <label><input type="radio" name="preset" value="check"> 설정과 맞는지 보기</label>
         <label><input type="radio" name="preset" value="polish"> 문장 다듬기</label>

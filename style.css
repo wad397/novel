@@ -195,27 +195,23 @@ button { font: inherit; color: inherit; cursor: pointer; }
 @media (max-width: 520px) { .panel .presets { grid-template-columns: 1fr; } }
 .panel .field { margin-bottom: -20px; } /* 제목과 입력칸을 붙인다 (창 안 간격 28px) */
 
-/* 설정 파일을 칸으로 적는 화면 */
+/* 설정 파일을 표로 적는 화면 */
 #text[hidden], .form[hidden] { display: none; }
-.form { display: grid; gap: 14px; max-width: 40rem; }
-.form h2 { margin: 22px 0 0; padding-bottom: 8px; border-bottom: 1px solid var(--edge); font: 600 1rem/1.4 var(--sign); }
-.form h2:first-child { margin-top: 0; }
-.form .hint { margin: -4px 0 0; color: var(--caption); font-size: .82rem; }
-.form textarea { display: block; width: 100%; padding: 8px 10px; border: 1px solid var(--edge); border-radius: 2px; background: var(--wall); color: var(--ink); font: .95rem/1.7 var(--sign); resize: vertical; field-sizing: content; }
-.form textarea:focus { outline: 2px solid var(--ink); outline-offset: -1px; }
-.form .fields, .form .f { display: grid; gap: 12px; }
-.form .f { gap: 4px; }
-.form .f > span, .form .cols { font: 500 .78rem/1.4 var(--sign); color: var(--caption); }
-.form .rowcard { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; padding: 12px 14px; border: 1px solid var(--edge); background: var(--plaque); }
-.form .rowcard .first { grid-column: 1 / -1; }
-.form .rowcard .first textarea { font-weight: 600; }
-.form .rowcard > .link { grid-column: 1 / -1; justify-self: end; padding: 0; font-size: .78rem; }
-.form .rowcard.pair, .form .cols { grid-template-columns: 4.5rem 1fr auto; align-items: start; }
-.form .cols { display: grid; gap: 12px; margin: 0 0 -8px; padding: 0 14px; }
-.form .rowcard.pair { padding: 0; border: 0; background: none; }
-.form .rowcard.pair .first { grid-column: auto; }
-.form .rowcard.pair > .link { grid-column: auto; align-self: center; }
-.form .cols::after { content: "지우기"; visibility: hidden; font-size: .78rem; }
-.form .cols { padding: 0; }
+.form { display: grid; gap: 12px; }
+.form h1 { margin: 0 0 4px; font: 400 1.6rem/1.4 var(--text); }
+.form h2 { margin: 26px 0 0; font: 400 1.2rem/1.4 var(--text); }
+.form .hint { margin: 0; font-size: .9rem; }
+.form .tbl { overflow-x: auto; }
+.form table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.form th, .form td { border: 1px solid var(--edge); padding: 0; text-align: left; vertical-align: top; font-weight: 400; }
+.form thead th { padding: 7px 10px; background: var(--wall); color: var(--caption); white-space: nowrap; }
+.form thead td, .form td.del { border: 0; width: 1.8rem; }
+.form tbody th { padding: 7px 10px; width: 34%; }
+.form textarea { display: block; width: 100%; min-height: 2.4rem; padding: 7px 10px; border: 0; background: transparent; color: var(--ink); font: inherit; line-height: 1.6; resize: none; field-sizing: content; }
+.form textarea:focus { outline: 2px solid var(--ink); outline-offset: -2px; }
+.form textarea::placeholder { color: var(--caption); opacity: .6; }
+.form .free { border: 1px solid var(--edge); font-size: .9rem; }
+.form .del button { width: 1.8rem; height: 2.4rem; border: 0; background: none; color: var(--caption); font-size: 1rem; }
+.form .del button:hover { color: var(--dot); }
 .form .add { justify-self: start; padding: 0; }
-@media (max-width: 639px) { .form .rowcard:not(.pair) { grid-template-columns: 1fr; } }
+.panel input[type="url"] { width: 100%; padding: 8px 10px; border: 1px solid var(--edge); border-radius: 2px; background: var(--wall); color: var(--ink); font: .9rem var(--sign); }
