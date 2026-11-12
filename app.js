@@ -1,7 +1,7 @@
 import * as drive from './drive.js';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
-  episodeNoteName, parseNoteName, WORK_TEMPLATE, episodeTemplate, tableCells,
+  episodeNoteName, parseNoteName, WORK_TEMPLATE, episodeTemplate, parseDoc, formatDoc,
   countText, assist, diff, extractRevision, buildPrompt, isConflict, sanitizeTitle,
 } from './logic.js';
 
@@ -190,6 +190,7 @@ async function showEditor(folderId, fileId) {
   } else store.del(fileId);
 
   const isEpisode = !!epNum;
+  const isForm = meta.name === SETTINGS || !!parseNoteName(meta.name);
   const memoPart = memoFile ? `<p class="memo-head"><span>${isEpisode ? '작품 설정' : '설정 메모'}</span><a href="#/e/${folderId}/${memoFile.id}">고치기</a></p>${memoHtml(memo)}` : '';
   const notePart = !isEpisode ? '' : `<p class="memo-head"><span>이번 화 설정</span>${noteFile ? `<a href="#/e/${folderId}/${noteFile.id}">고치기</a>` : '<button type="button" class="link" id="add-note">만들기</button>'}</p>${noteFile ? memoHtml(note) : ''}`;
   $app.innerHTML = `
@@ -199,13 +200,13 @@ async function showEditor(folderId, fileId) {
           <a href="#/n/${folderId}" class="place">${esc(folder.name)}</a>
           <h1 id="title"></h1>
           <p class="status" id="status"></p>
-          <p class="tools">${isEpisode ? '<button id="rename" class="link">제목 바꾸기</button><button id="delete" class="link">휴지통으로</button>' : ''}<button class="link open-settings">설정</button></p>
+          <p class="tools">${isEpisode ? '<button id="rename" class="link">제목 바꾸기</button><button id="delete" class="link">휴지통으로</button>' : ''}${isForm ? '<button id="raw" class="link">글자로 고치기</button>' : ''}<button class="link open-settings">설정</button></p>
           <p class="ai-tools"><button type="button" class="open-ask">Claude에게 묻기</button><button type="button" class="open-apply">수정본 반영</button></p>
           <p class="no" id="no"></p>
         </div>
         ${notePart || memoPart ? `<div class="plaque memo-card"><div class="memo-body">${notePart}${memoPart}</div></div>` : ''}
       </div></aside>
-      <div class="sheet"><textarea id="text" spellcheck="false" placeholder="첫 문장을 써 보세요" aria-label="원고"></textarea></div>
+      <div class="sheet">${isForm ? '<div class="form" id="form"></div>' : ''}<textarea id="text" spellcheck="false" placeholder="첫 문장을 써 보세요" aria-label="원고"></textarea></div>
     </div>
     <div class="counter" id="counter">
       <p class="counter-cheer" id="counter-cheer" aria-live="polite"></p>
@@ -238,6 +239,17 @@ async function showEditor(folderId, fileId) {
     clearTimeout(editing.timer);
     editing.timer = setTimeout(save, SAVE_DELAY);
   };
+  if (isForm) {
+    const box = $app.querySelector('#form');
+    const raw = $app.querySelector('#raw');
+    ta.hidden = true;
+    setupForm(ta, box);
+    raw.onclick = () => {
+      box.hidden = ta.hidden; // 글자 화면으로 가면 칸은 숨긴다
+      ta.hidden = !ta.hidden;
+      raw.textContent = ta.hidden ? '글자로 고치기' : '칸으로 고치기';
+    };
+  }
   $app.querySelector('#add-note')?.addEventListener('click', async () => {
     try {
       const f = await drive.createText(episodeNoteName(epNum), folderId, episodeTemplate(epNum));
@@ -250,30 +262,69 @@ async function showEditor(folderId, fileId) {
 
 // 설정 메모를 설명 카드용으로. "# 제목"은 소제목, 표는 항목·내용 짝으로 그린다.
 function memoHtml(text) {
-  const lines = text.trim().split('\n');
   if (!text.trim()) return '<p class="quiet">아직 비어 있어요. 인물과 세계관을 적어 두면 여기에 보여요.</p>';
-  const out = [];
-  for (let i = 0; i < lines.length;) {
-    const line = lines[i];
-    if (!line.trim()) { i++; continue; }
-    if (/^#+\s/.test(line)) { out.push(`<h4>${esc(line.replace(/^#+\s*/, ''))}</h4>`); i++; continue; }
-    const block = [];
-    const isTable = line.trimStart().startsWith('|');
-    while (i < lines.length && lines[i].trim() && !/^#+\s/.test(lines[i]) && lines[i].trimStart().startsWith('|') === isTable) block.push(lines[i++]);
-    if (!isTable) { out.push(`<p>${block.map(esc).join('<br>')}</p>`); continue; }
-    const [head, ...rows] = block.map(tableCells).filter(Boolean);
-    const val = (v) => (v ? esc(v) : '<span class="quiet">—</span>');
-    if (head.length === 2) {
-      out.push(`<dl>${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${val(v)}</dd>`).join('')}</dl>`);
-    } else {
-      // 칸이 많은 표(인물 카드)는 좁은 설명판에 맞게 한 줄을 카드 하나로
-      const filled = rows.filter((r) => r.some(Boolean));
-      out.push(filled.length
-        ? filled.map(([name, ...rest]) => `<dl class="card"><dt class="name">${val(name)}</dt>${rest.map((v, k) => (v ? `<dt>${esc(head[k + 1] ?? '')}</dt><dd>${esc(v)}</dd>` : '')).join('')}</dl>`).join('')
-        : '<p class="quiet">—</p>');
+  const val = (v) => (v ? esc(v) : '<span class="quiet">—</span>');
+  return parseDoc(text).map((b) => {
+    if (b.head) return `<h4>${esc(b.head.replace(/^#+\s*/, ''))}</h4>`;
+    if (b.text) return `<p>${b.text.split('\n').map(esc).join('<br>')}</p>`;
+    if (b.cols.length === 2) return `<dl>${b.rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${val(v)}</dd>`).join('')}</dl>`;
+    // 칸이 많은 표(인물 카드)는 좁은 설명판에 맞게 한 줄을 카드 하나로
+    const filled = b.rows.filter((r) => r.some(Boolean));
+    return filled.length
+      ? filled.map(([name, ...rest]) => `<dl class="card"><dt class="name">${val(name)}</dt>${rest.map((v, k) => (v ? `<dt>${esc(b.cols[k + 1])}</dt><dd>${esc(v)}</dd>` : '')).join('')}</dl>`).join('')
+      : '<p class="quiet">—</p>';
+  }).join('');
+}
+
+// 설정 파일을 칸으로 적는 화면. 원고 칸(ta)이 그대로 원본이고, 칸을 고칠 때마다 표 글자로 되돌려 넣는다.
+function setupForm(ta, box) {
+  let blocks, mine = false;
+  const field = (b, r, c, v, label) => `<label class="f${c === 0 ? ' first' : ''}">${label ? `<span>${esc(label)}</span>` : ''}<textarea rows="1" data-b="${b}" data-r="${r}" data-c="${c}"${label ? '' : ` aria-label="${esc(blocks[b].cols[c])}"`}>${esc(v)}</textarea></label>`;
+  const render = () => {
+    blocks = parseDoc(ta.value);
+    box.innerHTML = blocks.map((b, i) => {
+      if (b.head) return /^#\s/.test(b.head) ? '' : `<h2>${esc(b.head.replace(/^#+\s*/, ''))}</h2>`;
+      if (b.text !== undefined) {
+        return /^\s*-(\s|$)/m.test(b.text)
+          ? `<textarea class="free" rows="2" data-b="${i}" aria-label="내용">${esc(b.text)}</textarea>`
+          : `<p class="hint">${b.text.split('\n').map(esc).join('<br>')}</p>`;
+      }
+      // "항목 | 내용" 표는 항목이 이름표, 그 밖의 표는 한 줄이 카드 하나
+      if (b.cols.length === 2 && b.cols[0] === '항목') return `<div class="fields">${b.rows.map((r, k) => field(i, k, 1, r[1], r[0])).join('')}</div>`;
+      const pair = b.cols.length === 2;
+      return `${pair ? `<p class="cols"><span>${esc(b.cols[0])}</span><span>${esc(b.cols[1])}</span></p>` : ''}
+        ${b.rows.map((r, k) => `<div class="rowcard${pair ? ' pair' : ''}">${r.map((v, c) => field(i, k, c, v, pair ? '' : b.cols[c])).join('')}<button type="button" class="link" data-del="${i}" data-r="${k}">지우기</button></div>`).join('')}
+        <button type="button" class="link add" data-add="${i}">+ ${esc(pair ? '줄' : b.cols[0])} 추가</button>`;
+    }).join('');
+  };
+  const commit = () => {
+    mine = true;
+    ta.value = formatDoc(blocks);
+    ta.dispatchEvent(new Event('input'));
+    mine = false;
+  };
+  box.addEventListener('input', (e) => {
+    const { b, r, c } = e.target.dataset;
+    if (b === undefined) return;
+    if (r === undefined) blocks[b].text = e.target.value.trim() ? e.target.value : '-'; // 다 지워도 칸이 사라지지 않게
+    else blocks[b].rows[r][c] = e.target.value;
+    commit();
+  });
+  box.addEventListener('click', (e) => {
+    const { add, del, r } = e.target.dataset;
+    if (add !== undefined) {
+      blocks[add].rows.push(blocks[add].cols.map(() => ''));
+      commit(); render();
+      box.querySelector(`[data-b="${add}"][data-r="${blocks[add].rows.length - 1}"]`).focus();
+    } else if (del !== undefined) {
+      if (blocks[del].rows[r].some(Boolean) && !confirm('이 줄을 지울까요?')) return;
+      blocks[del].rows.splice(r, 1);
+      commit(); render();
     }
-  }
-  return out.join('');
+  });
+  // 수정본 반영이나 글자로 고치기처럼 밖에서 원본이 바뀌면 칸을 다시 그린다
+  ta.addEventListener('input', () => { if (!mine) render(); });
+  render();
 }
 
 // execCommand는 되돌리기(Ctrl+Z) 기록을 남긴다. 안 되는 브라우저에서는 직접 바꾼다.

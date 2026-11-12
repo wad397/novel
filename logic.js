@@ -84,7 +84,34 @@ export const episodeTemplate = (num) => `# ${num}화 설정
 // 마크다운 표 한 줄을 칸으로. 구분선(|---|)이면 null.
 // shortcut: 칸 안의 \| 는 처리하지 않는다, 내용에 | 를 쓸 일이 생기면 고친다
 export const tableCells = (line) =>
-  (/^[\s|:-]+$/.test(line) ? null : line.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim()));
+  (/^[\s|:]*-[\s|:-]*$/.test(line) ? null : line.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim()));
+
+// 설정 파일을 덩어리로 나눈다: 제목 { head }, 표 { cols, rows }, 그 밖의 글 { text }
+export function parseDoc(text) {
+  const lines = text.replace(/\r/g, '').split('\n');
+  const isHead = (l) => /^#+\s/.test(l);
+  const isRow = (l) => l.trimStart().startsWith('|');
+  const blocks = [];
+  for (let i = 0; i < lines.length;) {
+    if (!lines[i].trim()) { i++; continue; }
+    if (isHead(lines[i])) { blocks.push({ head: lines[i++] }); continue; }
+    const table = isRow(lines[i]);
+    const block = [];
+    while (i < lines.length && lines[i].trim() && !isHead(lines[i]) && isRow(lines[i]) === table) block.push(lines[i++]);
+    if (!table) { blocks.push({ text: block.join('\n') }); continue; }
+    const [cols, ...rows] = block.map(tableCells).filter(Boolean);
+    // 칸 수가 모자라거나 넘치는 줄은 제목 줄에 맞춘다
+    blocks.push({ cols, rows: rows.map((r) => cols.map((_, k) => r[k] ?? '')) });
+  }
+  return blocks;
+}
+
+// 칸에 적은 글을 표 한 칸에 넣을 수 있게: 줄바꿈은 띄어쓰기로, | 는 / 로
+const cell = (v) => v.replace(/\s*\n\s*/g, ' ').replace(/\|/g, '/').trim();
+const row = (cells) => `| ${cells.map(cell).join(' | ')} |`;
+
+export const formatDoc = (blocks) => blocks.map((b) =>
+  b.head ?? b.text ?? [row(b.cols), `|${b.cols.map(() => '---').join('|')}|`, ...b.rows.map(row)].join('\n')).join('\n\n') + '\n';
 
 export function conflictFileName(name, date) {
   const p = (n) => String(n).padStart(2, '0');

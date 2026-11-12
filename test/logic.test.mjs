@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
-  episodeNoteName, parseNoteName, episodeTemplate, tableCells, countText, assist, diff, extractRevision, buildPrompt, isConflict, escapeQuery, sanitizeTitle,
+  episodeNoteName, parseNoteName, episodeTemplate, WORK_TEMPLATE, parseDoc, formatDoc, tableCells, countText, assist, diff, extractRevision, buildPrompt, isConflict, escapeQuery, sanitizeTitle,
 } from '../logic.js';
 
 test('회차 파일 이름', () => {
@@ -142,4 +142,18 @@ test('표 한 줄 읽기', () => {
   assert.deepEqual(tableCells('| 직전 화 |  |'), ['직전 화', '']);
   assert.equal(tableCells('|---|:--|'), null);
   assert.equal(tableCells('| --- | --- |'), null);
+});
+
+test('설정 파일을 덩어리로 읽고 다시 쓰기', () => {
+  // 양식은 읽었다 써도 글자 하나 바뀌지 않는다
+  assert.equal(formatDoc(parseDoc(WORK_TEMPLATE)), WORK_TEMPLATE);
+  assert.equal(formatDoc(parseDoc(episodeTemplate(7))), episodeTemplate(7));
+  const blocks = parseDoc('## 표\n| 항목 | 내용 |\n| --- | --- |\n| 가제 |  |\n| 모자란 줄 |\n\n- 메모\n');
+  assert.deepEqual(blocks, [
+    { head: '## 표' },
+    { cols: ['항목', '내용'], rows: [['가제', ''], ['모자란 줄', '']] },
+    { text: '- 메모' },
+  ]);
+  blocks[1].rows[0][1] = '첫 줄\n둘째 | 줄';
+  assert.match(formatDoc(blocks), /\| 가제 \| 첫 줄 둘째 \/ 줄 \|/); // 표를 깨는 글자는 바꿔서 넣는다
 });
