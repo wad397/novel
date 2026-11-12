@@ -12,6 +12,47 @@ export function parseEpisodeName(name) {
 export const nextEpisodeNumber = (names) =>
   Math.max(0, ...names.map((n) => parseEpisodeName(n)?.num ?? 0)) + 1;
 
+// 회차별 설정 파일. 번호로 회차와 짝을 지어서 회차 제목을 바꿔도 따라간다.
+export const episodeNoteName = (num) => `${String(num).padStart(3, '0')} 설정.md`;
+export const parseNoteName = (name) => { const m = /^(\d+) 설정\.md$/.exec(name); return m ? Number(m[1]) : null; };
+
+export const WORK_TEMPLATE = `# 작품 기본 정보
+- 가제: 
+- 장르: 
+- 핵심 재미 (한 줄): 
+- 주인공이 끝까지 원하는 것: 
+- 참고작 / 비슷한 느낌: 
+- 회당 분량: 
+- 시점: 
+- 피하고 싶은 것: 
+
+# 인물 카드
+(이름 / 역할 / 원하는 것 / 말버릇·말투 / 절대 안 하는 행동 / 직업 / 특이점)
+- 
+
+# 꼭 지켜야 할 설정
+- 
+
+# 앞으로의 끝 장면 메모
+- 1화: 
+- 2화: 
+
+# 받은 원고 피드백
+- 
+`;
+
+export const episodeTemplate = (num) => `# ${num}화 요청서
+- 직전 화가 끝난 상황: 
+- 이번 화에서 일어날 일: 
+- 마지막 장면 (다음 화를 누르게 할 장면): 
+- 꼭 넣고 싶은 장면이나 대사: 
+- 이번 화 분위기: 
+- 이번 화에서 빼고 싶은 것: 
+
+# 이번 화에 꼭 지켜야 할 설정
+- 
+`;
+
 export function conflictFileName(name, date) {
   const p = (n) => String(n).padStart(2, '0');
   const stamp = `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())} ${p(date.getHours())}-${p(date.getMinutes())}`;
@@ -113,12 +154,13 @@ export function extractRevision(pasted) {
 }
 
 // Claude에게 보낼 질문 한 덩어리
-export function buildPrompt({ concept, request, extra, work, episode, memo, text }) {
+export function buildPrompt({ concept, request, extra, work, episode, memo, note = '', text }) {
   return [
     concept.trim() && `[너의 역할]\n${concept.trim()}`,
     `[요청]\n${[request, extra.trim()].filter(Boolean).join('\n')}`,
     `[작품] ${work}\n[회차] ${episode}`,
     `[설정 메모]\n${memo.trim() || '(없음)'}`,
+    note.trim() && `[이번 화 설정]\n${note.trim()}`,
     `[본문]\n${text}`,
     '[답하는 방법]\n'
       + '- 원고를 고쳐 달라는 요청이면 설명은 짧게 하고, 고친 회차 전체를 ```수정본 으로 시작하는 코드 블록 하나에 담아줘. 고치지 않은 문장도 빠짐없이 그대로 넣어줘.\n'

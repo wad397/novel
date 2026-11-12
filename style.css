@@ -69,7 +69,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* 설명판: 미술관 벽의 작품 캡션처럼, 화면 오른쪽 가운데에 두 장 */
 /* 화면 오른쪽 위에 고정. 원고 종이 윗선에 맞추고, 오른쪽 위치는 원고+설명판 묶음의 오른쪽 끝에 맞춘다 */
 .label-in { position: fixed; z-index: 1; top: 48px; width: 15rem; right: max(20px, calc(50% - (44rem + 40px + 15rem) / 2)); max-height: calc(100dvh - 48px - 110px); display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 10px; }
-.label-in > .memo-card { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
+.label-in > .memo-card { display: grid; min-height: 0; }
 .plaque { position: relative; padding: 14px 16px 16px; background: var(--plaque); box-shadow: 0 1px 2px rgb(0 0 0 / .14); font-size: .8rem; line-height: 1.55; }
 .plaque .place { font-size: .75rem; margin-bottom: 2px; max-width: calc(100% - 2.6rem); overflow-wrap: anywhere; }
 .label h1 { margin: 2px 0 10px; padding-right: 2.6rem; font: 600 1.05rem/1.4 var(--sign); letter-spacing: 0; overflow-wrap: anywhere; }
@@ -86,6 +86,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .memo-body { min-height: 0; overflow-y: auto; font-size: .75rem; line-height: 1.75; overflow-wrap: anywhere; }
 .memo-body h4 { margin: 0 0 2px; font-size: .78rem; font-weight: 600; }
 .memo-body p + p, .memo-body p + h4 { margin-top: .9em; }
+.memo-body .memo-head { font-size: .8rem; }
+.memo-body * + .memo-head { margin-top: 1.4em; padding-top: 1em; border-top: 1px solid var(--edge); }
 
 /* 오른쪽 아래 분량 칸 */
 .counter { position: fixed; z-index: 3; right: max(20px, env(safe-area-inset-right)); bottom: max(20px, env(safe-area-inset-bottom)); display: grid; justify-items: end; gap: 8px; }

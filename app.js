@@ -1,6 +1,7 @@
 import * as drive from './drive.js';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
+  episodeNoteName, parseNoteName, WORK_TEMPLATE, episodeTemplate,
   countText, assist, diff, extractRevision, buildPrompt, isConflict, sanitizeTitle,
 } from './logic.js';
 
@@ -37,7 +38,7 @@ const countSettings = loadSettings(COUNT_KEY, COUNT_DEFAULT);
 const inputSettings = loadSettings(INPUT_KEY, INPUT_DEFAULT);
 const AI_KEY = 'ai-settings';
 const aiSettings = loadSettings(AI_KEY, { concept: '' });
-const displayName = (name) => (name === SETTINGS ? '설정 메모' : parseEpisodeName(name)?.title ?? name.replace(/\.md$/, ''));
+const displayName = (name) => (name === SETTINGS ? '설정 메모' : parseNoteName(name) ? `${parseNoteName(name)}화 설정` : parseEpisodeName(name)?.title ?? name.replace(/\.md$/, ''));
 
 // ---------- 로그인 ----------
 // 구글 접근 권한(토큰)은 한 번에 1시간까지만 받을 수 있다. 서버 없이 쓰는 앱이라
@@ -125,7 +126,7 @@ async function showNovels() {
     if (title === null) return;
     try {
       const folder = await drive.createFolder(sanitizeTitle(title), rootId);
-      await drive.createText(SETTINGS, folder.id, '');
+      await drive.createText(SETTINGS, folder.id, WORK_TEMPLATE);
       location.hash = `#/n/${folder.id}`;
     } catch (e) { failed(e, showNovels); }
   };
@@ -136,7 +137,7 @@ async function showNovel(folderId) {
   const [folder, files] = await Promise.all([drive.getMeta(folderId), drive.listChildren(folderId)]);
   const md = files.filter((f) => f.name.endsWith('.md'));
   const settings = md.find((f) => f.name === SETTINGS);
-  const episodes = md.filter((f) => f !== settings).sort((x, y) =>
+  const episodes = md.filter((f) => f !== settings && !parseNoteName(f.name)).sort((x, y) =>
     (parseEpisodeName(x.name)?.num ?? Infinity) - (parseEpisodeName(y.name)?.num ?? Infinity) || x.name.replace(/\.md$/, '').localeCompare(y.name.replace(/\.md$/, ''), 'ko'));
   const row = (f) => {
     const ep = parseEpisodeName(f.name);
@@ -160,8 +161,11 @@ async function showNovel(folderId) {
     try {
       // 다른 기기에서 그사이 회차를 추가했을 수 있어서 만들기 직전에 다시 확인한다
       const latest = await drive.listChildren(folderId);
-      const name = episodeFileName(nextEpisodeNumber(latest.map((f) => f.name)), sanitizeTitle(title));
-      const f = await drive.createText(name, folderId, '');
+      const num = nextEpisodeNumber(latest.map((f) => f.name));
+      const [f] = await Promise.all([
+        drive.createText(episodeFileName(num, sanitizeTitle(title)), folderId, ''),
+        drive.createText(episodeNoteName(num), folderId, episodeTemplate(num)),
+      ]);
       location.hash = `#/e/${folderId}/${f.id}`;
     } catch (e) { failed(e, () => showNovel(folderId)); }
   };
@@ -173,8 +177,11 @@ async function showEditor(folderId, fileId) {
     drive.getMeta(fileId), drive.readText(fileId), drive.getMeta(folderId), drive.listChildren(folderId),
   ]);
   const memoFile = siblings.find((f) => f.name === SETTINGS && f.id !== fileId);
-  const memo = memoFile ? await drive.readText(memoFile.id) : null;
-  let text = remote, dirty = false;
+  const epNum = parseEpisodeName(meta.name)?.num;
+  const noteFile = epNum ? siblings.find((f) => f.name === episodeNoteName(epNum)) : null;
+  const [memo, note] = await Promise.all([memoFile, noteFile].map((f) => (f ? drive.readText(f.id) : null)));
+  // 비어 있는 작품 설정을 열면 양식을 채워서 보여 준다. 고치기 전에는 저장하지 않는다.
+  let text = meta.name === SETTINGS && !remote ? WORK_TEMPLATE : remote, dirty = false;
   const draft = store.get(fileId);
   if (draft && draft.text !== remote) {
     if (confirm(`이 기기에 저장되지 않은 글이 있어요 (${new Date(draft.at).toLocaleString()}).\n불러올까요? 취소하면 드라이브의 글을 엽니다.`)) {
@@ -182,7 +189,9 @@ async function showEditor(folderId, fileId) {
     } else store.del(fileId);
   } else store.del(fileId);
 
-  const isEpisode = !!parseEpisodeName(meta.name);
+  const isEpisode = !!epNum;
+  const memoPart = memoFile ? `<p class="memo-head"><span>${isEpisode ? '작품 설정' : '설정 메모'}</span><a href="#/e/${folderId}/${memoFile.id}">고치기</a></p>${memoHtml(memo)}` : '';
+  const notePart = !isEpisode ? '' : `<p class="memo-head"><span>이번 화 설정</span>${noteFile ? `<a href="#/e/${folderId}/${noteFile.id}">고치기</a>` : '<button type="button" class="link" id="add-note">만들기</button>'}</p>${noteFile ? memoHtml(note) : ''}`;
   $app.innerHTML = `
     <div class="room">
       <aside class="label"><div class="label-in">
@@ -194,10 +203,7 @@ async function showEditor(folderId, fileId) {
           <p class="ai-tools"><button type="button" class="open-ask">Claude에게 묻기</button><button type="button" class="open-apply">수정본 반영</button></p>
           <p class="no" id="no"></p>
         </div>
-        ${memoFile ? `<div class="plaque memo-card">
-          <p class="memo-head"><span>설정 메모</span><a href="#/e/${folderId}/${memoFile.id}">고치기</a></p>
-          <div class="memo-body">${memoHtml(memo)}</div>
-        </div>` : ''}
+        ${notePart || memoPart ? `<div class="plaque memo-card"><div class="memo-body">${notePart}${memoPart}</div></div>` : ''}
       </div></aside>
       <div class="sheet"><textarea id="text" spellcheck="false" placeholder="첫 문장을 써 보세요" aria-label="원고"></textarea></div>
     </div>
@@ -210,7 +216,7 @@ async function showEditor(folderId, fileId) {
     </div>`;
   const ta = $app.querySelector('#text');
   ta.value = text;
-  editing = { folderId, fileId, name: meta.name, modifiedTime: meta.modifiedTime, dirty, timer: null, saving: false, pending: false, ta, lastCount: null, work: folder.name, memo: memo ?? '' };
+  editing = { folderId, fileId, name: meta.name, modifiedTime: meta.modifiedTime, dirty, timer: null, saving: false, pending: false, ta, lastCount: null, work: folder.name, memo: memo ?? '', note: note ?? '', noteId: noteFile?.id };
   renderHead();
   setStatus(dirty ? 'typing' : 'saved');
   if (dirty) save();
@@ -232,6 +238,12 @@ async function showEditor(folderId, fileId) {
     clearTimeout(editing.timer);
     editing.timer = setTimeout(save, SAVE_DELAY);
   };
+  $app.querySelector('#add-note')?.addEventListener('click', async () => {
+    try {
+      const f = await drive.createText(episodeNoteName(epNum), folderId, episodeTemplate(epNum));
+      location.hash = `#/e/${folderId}/${f.id}`;
+    } catch (e) { e.status === 401 ? needLogin() : alert(`설정 파일을 만들지 못했어요. ${e.message}`); }
+  });
   $app.querySelector('#rename')?.addEventListener('click', renameEpisode);
   $app.querySelector('#delete')?.addEventListener('click', deleteEpisode);
 }
@@ -321,7 +333,7 @@ function setupAi() {
     const ep = parseEpisodeName(editing.name);
     const text = buildPrompt({
       concept: aiSettings.concept, request: PRESETS[af.preset.value], extra: af.extra.value, work: editing.work,
-      episode: ep ? `${ep.num}화 ${ep.title}` : displayName(editing.name), memo: editing.memo, text: editing.ta.value,
+      episode: ep ? `${ep.num}화 ${ep.title}` : displayName(editing.name), memo: editing.memo, note: editing.note, text: editing.ta.value,
     });
     done.textContent = (await copyText(text, $ask))
       ? '복사했어요. Claude를 열고 입력칸에 붙여 넣어 보내세요.'
@@ -521,6 +533,7 @@ async function deleteEpisode() {
   if (!confirm(`"${displayName(editing.name)}" 회차를 드라이브 휴지통으로 옮길까요?\n(30일 안에 드라이브 휴지통에서 되살릴 수 있어요)`)) return;
   try {
     await drive.trash(editing.fileId);
+    if (editing.noteId) await drive.trash(editing.noteId).catch(() => {}); // 짝인 설정 파일도 함께
     store.del(editing.fileId);
     const { folderId } = editing;
     editing = null;

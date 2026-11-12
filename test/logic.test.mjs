@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
-  countText, assist, diff, extractRevision, buildPrompt, isConflict, escapeQuery, sanitizeTitle,
+  episodeNoteName, parseNoteName, episodeTemplate, countText, assist, diff, extractRevision, buildPrompt, isConflict, escapeQuery, sanitizeTitle,
 } from '../logic.js';
 
 test('회차 파일 이름', () => {
@@ -123,5 +123,15 @@ test('질문 문구', () => {
   assert.match(p, /\[설정 메모\]\n\(없음\)/);
   assert.match(p, /\[본문\]\n본문/);
   assert.match(p, /```수정본/);
-  assert.doesNotMatch(buildPrompt({ concept: '', request: 'r', extra: '', work: 'w', episode: 'e', memo: 'm', text: 't' }), /너의 역할/);
+  assert.doesNotMatch(buildPrompt({ concept: '', request: 'r', extra: '', work: 'w', episode: 'e', memo: 'm', text: 't' }), /너의 역할|이번 화 설정/);
+  assert.match(buildPrompt({ concept: '', request: 'r', extra: '', work: 'w', episode: 'e', memo: 'm', note: '끝 장면', text: 't' }), /\[이번 화 설정\]\n끝 장면\n\n\[본문\]/);
+});
+
+test('회차별 설정 파일 이름', () => {
+  assert.equal(episodeNoteName(3), '003 설정.md');
+  assert.equal(parseNoteName('003 설정.md'), 3);
+  assert.equal(parseNoteName('설정.md'), null);
+  assert.equal(parseNoteName('003 - 설정.md'), null);
+  assert.equal(parseEpisodeName(episodeNoteName(3)), null); // 회차 목록·번호 매기기에 끼지 않는다
+  assert.match(episodeTemplate(3), /^# 3화 요청서/);
 });
