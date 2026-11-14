@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
-  episodeNoteName, parseNoteName, episodeTemplate, WORK_TEMPLATE, parseDoc, formatDoc, tableCells, countText, assist, diff, extractRevision, buildPrompt, isConflict, escapeQuery, sanitizeTitle,
+  episodeNoteName, parseNoteName, episodeTemplate, WORK_TEMPLATE, parseDoc, formatDoc, tableCells, isConflictCopy, exportText, countText, assist, diff, extractRevision, buildPrompt, isConflict, escapeQuery, sanitizeTitle,
 } from '../logic.js';
 
 test('회차 파일 이름', () => {
@@ -156,4 +156,14 @@ test('설정 파일을 덩어리로 읽고 다시 쓰기', () => {
   ]);
   blocks[1].rows[0][1] = '첫 줄\n둘째 | 줄';
   assert.match(formatDoc(blocks), /\| 가제 \| 첫 줄 둘째 \/ 줄 \|/); // 표를 깨는 글자는 바꿔서 넣는다
+});
+
+test('내보내기', () => {
+  const eps = [{ title: '1화 시작', text: '첫 문장\n\n둘째 문단\n' }, { title: '2화 밤', text: '밤이다' }];
+  assert.equal(exportText([eps[0]], 'md'), '# 1화 시작\n\n첫 문장\n\n둘째 문단\n');
+  assert.equal(exportText([eps[0]], 'txt'), '1화 시작\n\n첫 문장\n\n둘째 문단\n');
+  assert.equal(exportText(eps, 'md', '작품'), '# 작품\n\n## 1화 시작\n\n첫 문장\n\n둘째 문단\n\n## 2화 밤\n\n밤이다\n');
+  assert.equal(exportText(eps, 'txt', '작품'), '작품\n\n\n1화 시작\n\n첫 문장\n\n둘째 문단\n\n\n2화 밤\n\n밤이다\n');
+  assert.ok(isConflictCopy('001 - 시작 (충돌 2026-11-14 10-30).md'));
+  assert.ok(!isConflictCopy('001 - 시작.md'));
 });

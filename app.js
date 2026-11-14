@@ -2,7 +2,7 @@ import * as drive from './drive.js';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
   episodeNoteName, parseNoteName, WORK_TEMPLATE, episodeTemplate, parseDoc, formatDoc,
-  countText, assist, diff, extractRevision, buildPrompt, isConflict, sanitizeTitle,
+  countText, assist, diff, extractRevision, buildPrompt, isConflict, sanitizeTitle, isConflictCopy, exportText,
 } from './logic.js';
 
 // 구글 클라우드 콘솔에서 만든 OAuth 클라이언트 ID (README 참고)
@@ -21,6 +21,17 @@ const $app = document.getElementById('app');
 const $banner = document.getElementById('login-banner');
 let tokenClient, rootId;
 let editing = null; // { folderId, fileId, name, modifiedTime, dirty, timer, saving, pending }
+
+const epLabel = (name) => { const ep = parseEpisodeName(name); return `${ep.num}화 ${ep.title}`; };
+const EXPORT_BUTTONS = '<button class="link" data-export="txt">txt로 내보내기</button><button class="link" data-export="md">md로 내보내기</button>';
+
+function download(name, text) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+  a.download = name.replace(/[\\/:*?"<>|]/g, ''); // 윈도우 파일 이름에 못 쓰는 글자
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
 
 const esc = (s) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const draftKey = (id) => `draft:${id}`;
@@ -144,10 +155,21 @@ async function showNovel(folderId) {
     return `<li><a href="#/e/${folderId}/${f.id}"><span class="no">${ep ? String(ep.num).padStart(3, '0') : ''}</span><span class="ep-title">${esc(ep ? ep.title : displayName(f.name))}</span><span class="date">${day(f.modifiedTime)}</span></a></li>`;
   };
   $app.innerHTML = `
-    <header class="page-head"><a href="#/" class="place">작품</a><h1>${esc(folder.name)}</h1><p class="head-tools"><button class="link open-settings">설정</button><button class="link danger" id="delete-work">작품 휴지통으로</button></p></header>
+    <header class="page-head"><a href="#/" class="place">작품</a><h1>${esc(folder.name)}</h1><p class="head-tools">${EXPORT_BUTTONS}<button class="link open-settings">설정</button><button class="link danger" id="delete-work">작품 휴지통으로</button></p></header>
     ${settings ? `<p class="memo"><a href="#/e/${folderId}/${settings.id}">설정 메모</a> 인물과 세계관을 적어 두는 곳</p>` : ''}
     <ol class="episodes">${episodes.map(row).join('') || '<li class="empty">아직 회차가 없어요. 첫 회차를 만들어 보세요.</li>'}</ol>
     <button id="add" class="act">새 회차 만들기</button>`;
+  for (const b of $app.querySelectorAll('[data-export]')) b.onclick = async () => {
+    const list = episodes.filter((f) => parseEpisodeName(f.name) && !isConflictCopy(f.name));
+    if (!list.length) return alert('내보낼 회차가 없어요.');
+    const fmt = b.dataset.export, label = b.textContent;
+    b.textContent = '내보내는 중…';
+    try {
+      const texts = await Promise.all(list.map((f) => drive.readText(f.id)));
+      download(`${folder.name}.${fmt}`, exportText(list.map((f, i) => ({ title: epLabel(f.name), text: texts[i] })), fmt, folder.name));
+    } catch (e) { e.status === 401 ? needLogin() : alert(`내보내지 못했어요. ${e.message}`); }
+    b.textContent = label;
+  };
   $app.querySelector('#delete-work').onclick = async () => {
     if (!confirm(`"${folder.name}" 작품을 회차 ${episodes.length}개와 설정 메모까지 모두 드라이브 휴지통으로 옮길까요?\n30일 안에는 드라이브 휴지통에서 되살릴 수 있어요.`)) return;
     try {
@@ -200,7 +222,7 @@ async function showEditor(folderId, fileId) {
           <a href="#/n/${folderId}" class="place">${esc(folder.name)}</a>
           <h1 id="title"></h1>
           <p class="status" id="status"></p>
-          <p class="tools">${isEpisode ? '<button id="rename" class="link">제목 바꾸기</button><button id="delete" class="link">휴지통으로</button>' : ''}${isForm ? '<button id="raw" class="link">글자로 고치기</button>' : ''}<button class="link open-settings">설정</button></p>
+          <p class="tools">${isEpisode ? '<button id="rename" class="link">제목 바꾸기</button><button id="delete" class="link">휴지통으로</button>' + EXPORT_BUTTONS : ''}${isForm ? '<button id="raw" class="link">글자로 고치기</button>' : ''}<button class="link open-settings">설정</button></p>
           <p class="ai-tools"><button type="button" class="open-ask">Claude에게 묻기</button><button type="button" class="open-apply">수정본 반영</button></p>
           <p class="no" id="no"></p>
         </div>
@@ -256,6 +278,10 @@ async function showEditor(folderId, fileId) {
       location.hash = `#/e/${folderId}/${f.id}`;
     } catch (e) { e.status === 401 ? needLogin() : alert(`설정 파일을 만들지 못했어요. ${e.message}`); }
   });
+  for (const b of $app.querySelectorAll('[data-export]')) b.onclick = () => {
+    const fmt = b.dataset.export, t = epLabel(editing.name);
+    download(`${editing.work} ${t}.${fmt}`, exportText([{ title: t, text: ta.value }], fmt));
+  };
   $app.querySelector('#rename')?.addEventListener('click', renameEpisode);
   $app.querySelector('#delete')?.addEventListener('click', deleteEpisode);
 }

@@ -229,6 +229,15 @@ export function buildPrompt({ concept, request, extra, work, episode, memo, note
   ].filter(Boolean).join('\n\n');
 }
 
+export const isConflictCopy = (name) => / \(충돌 [^)]*\)\.md$/.test(name);
+
+// 내보낼 글. eps: [{ title, text }]. work가 있으면 작품 제목을 맨 위에 두고 회차 제목을 한 단계 내린다.
+export function exportText(eps, fmt, work = '') {
+  const head = (t, lv) => (fmt === 'md' ? `${'#'.repeat(lv)} ${t}` : t);
+  const parts = eps.map((e) => `${head(e.title, work ? 2 : 1)}\n\n${e.text.trim()}`);
+  return [work && head(work, 1), ...parts].filter(Boolean).join(fmt === 'md' ? '\n\n' : '\n\n\n') + '\n';
+}
+
 export const isConflict = (knownModified, currentModified) => knownModified !== currentModified;
 
 // Drive 검색식(q)의 작은따옴표 문자열 안에 넣을 값
