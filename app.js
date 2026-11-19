@@ -259,7 +259,7 @@ async function showEditor(folderId, fileId) {
   ta.value = text;
   editing = { folderId, fileId, name: meta.name, modifiedTime: meta.modifiedTime, dirty, timer: null, saving: false, pending: false, ta, lastCount: null, work: folder.name, memo: memo ?? '', note: note ?? '', noteId: noteFile?.id };
   // 지난 화 설정은 미리 읽어 둔다. 복사 버튼을 누른 뒤에 읽으면 휴대폰에서 클립보드 복사가 막힐 수 있다.
-  // shortcut: 회차가 수백 개면 전부 붙여서 길어진다. 그때는 최근 N화만 보내게 줄인다.
+  // shortcut: 오래된 화는 규칙으로 줄일 뿐이라 회차가 수백 개면 여전히 길다. 그때는 오래된 화를 Claude 요약 한 덩어리로 바꾼다.
   const pastFiles = epNum ? siblings.map((f) => ({ f, num: parseNoteName(f.name) })).filter((x) => x.num && x.num < epNum).sort((a, b) => a.num - b.num) : [];
   editing.past = Promise.all(pastFiles.map(({ f }) => drive.readText(f.id)))
     .then((texts) => pastNotes(pastFiles.map(({ num }, i) => ({ num, text: texts[i] }))))

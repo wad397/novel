@@ -218,14 +218,24 @@ export function extractRevision(pasted) {
 
 // Claude에게 보낼 질문 한 덩어리
 // 지난 화 설정을 짧게: 채운 표 칸은 "항목: 내용", 목록은 그대로. 안내 문구와 빈칸은 뺀다.
-// notes: [{ num, text }]
-export const pastNotes = (notes) => notes.map(({ num, text }) => {
-  const lines = parseDoc(tidyNote(text)).flatMap((b) => {
-    if (b.rows) return b.rows.filter((r) => r[0] !== '몇 화' && r.slice(1).some(Boolean)).map((r) => `- ${r[0]}: ${r.slice(1).filter(Boolean).join(' / ')}`);
-    return b.text !== undefined ? b.text.split('\n').filter((l) => /^- \S/.test(l)) : [];
-  });
-  return lines.length ? `${num}화\n${lines.join('\n')}` : '';
-}).filter(Boolean).join('\n\n');
+// 최근 recent화는 전부, 그 전 화는 뒤 화에도 이어지는 것(일어난 일과 정해 둔 설정 목록)만 남긴다.
+// 분위기·빼고 싶은 것·넣고 싶은 장면은 그 화에만 쓰이는 부탁이라 오래된 화에서는 뺀다.
+// notes: [{ num, text }] 번호 순
+export function pastNotes(notes, recent = 10) {
+  const brief = (num, text, keep) => {
+    const lines = parseDoc(tidyNote(text)).flatMap((b) => {
+      if (b.rows) return b.rows.filter((r) => keep(r[0]) && r.slice(1).some(Boolean)).map((r) => `- ${r[0]}: ${r.slice(1).filter(Boolean).join(' / ')}`);
+      return b.text !== undefined ? b.text.split('\n').filter((l) => /^- \S/.test(l)) : [];
+    });
+    return lines.length ? `${num}화\n${lines.join('\n')}` : '';
+  };
+  const cut = Math.max(0, notes.length - recent);
+  const join = (list, keep) => list.map(({ num, text }) => brief(num, text, keep)).filter(Boolean).join('\n\n');
+  const old = join(notes.slice(0, cut), (k) => k === '이번 화에서 일어날 일');
+  const now = join(notes.slice(cut), (k) => k !== '몇 화');
+  if (!old) return now;
+  return `(${notes[0].num}~${notes[cut - 1].num}화: 중요한 것만)\n\n${old}\n\n(최근 ${notes.length - cut}화: 전부)\n\n${now}`;
+}
 
 export function buildPrompt({ concept, request, extra, work, episode, memo, past = '', note = '', text }) {
   return [

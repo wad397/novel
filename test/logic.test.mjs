@@ -181,3 +181,12 @@ test('지난 화 설정 모으기', () => {
   const p = buildPrompt({ concept: '', request: 'r', extra: '', work: 'w', episode: 'e', memo: 'm', past: '1화\n- 환생', note: 'n', text: 't' });
   assert.match(p, /\[지난 화 설정\]\n1화\n- 환생\n\n\[이번 화 설정\]/);
 });
+
+test('지난 화 설정: 최근 10화는 전부, 그 전은 중요한 것만', () => {
+  const note = (n) => ({ num: n, text: `| 항목 | 내용 |\n|---|---|\n| 몇 화 | ${n}화 |\n| 이번 화에서 일어날 일 | 사건${n} |\n| 이번 화 분위기 | 밝게 |\n\n- 설정${n}\n` });
+  const out = pastNotes(Array.from({ length: 12 }, (_, i) => note(i + 1)));
+  assert.match(out, /^\(1~2화: 중요한 것만\)\n\n1화\n- 이번 화에서 일어날 일: 사건1\n- 설정1\n\n2화/);
+  assert.match(out, /\(최근 10화: 전부\)\n\n3화\n- 이번 화에서 일어날 일: 사건3\n- 이번 화 분위기: 밝게\n- 설정3/);
+  assert.equal((out.match(/분위기/g) || []).length, 10);
+  assert.doesNotMatch(pastNotes([note(1), note(2)]), /중요한 것만|최근/);
+});
