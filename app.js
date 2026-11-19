@@ -1,7 +1,7 @@
 import * as drive from './drive.js';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
-  episodeNoteName, parseNoteName, WORK_TEMPLATE, episodeTemplate, parseDoc, formatDoc, tidyNote, pastNotes,
+  episodeNoteName, parseNoteName, WORK_TEMPLATE, episodeTemplate, parseDoc, formatDoc, tidyNote, pastNotes, summaryPrompt,
   countText, assist, diff, extractRevision, buildPrompt, isConflict, sanitizeTitle, isConflictCopy, exportText,
 } from './logic.js';
 
@@ -10,6 +10,7 @@ const CLIENT_ID = '420828670170-ohu8mg6mndl2msllrgnb5tenbvvierag.apps.googleuser
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const ROOT_NAME = '내소설';
 const SETTINGS = '설정.md';
+const SUMMARY = '요약.md';
 const SAVE_DELAY = 2000;
 const UNITS = { chars: ['글자 수', '자'], words: ['단어 수', '단어'], sentences: ['문장 수', '문장'], bytes: ['용량', '바이트'] };
 const COUNT_KEY = 'count-settings';
@@ -49,7 +50,7 @@ const countSettings = loadSettings(COUNT_KEY, COUNT_DEFAULT);
 const inputSettings = loadSettings(INPUT_KEY, INPUT_DEFAULT);
 const AI_KEY = 'ai-settings';
 const aiSettings = loadSettings(AI_KEY, { concept: '', project: '' });
-const displayName = (name) => (name === SETTINGS ? '설정 메모' : parseNoteName(name) ? `${parseNoteName(name)}화 설정` : parseEpisodeName(name)?.title ?? name.replace(/\.md$/, ''));
+const displayName = (name) => (name === SETTINGS ? '설정 메모' : name === SUMMARY ? '오래된 화 요약' :parseNoteName(name) ? `${parseNoteName(name)}화 설정` : parseEpisodeName(name)?.title ?? name.replace(/\.md$/, ''));
 
 // ---------- 로그인 ----------
 // 구글 접근 권한(토큰)은 한 번에 1시간까지만 받을 수 있다. 서버 없이 쓰는 앱이라
@@ -148,7 +149,8 @@ async function showNovel(folderId) {
   const [folder, files] = await Promise.all([drive.getMeta(folderId), drive.listChildren(folderId)]);
   const md = files.filter((f) => f.name.endsWith('.md'));
   const settings = md.find((f) => f.name === SETTINGS);
-  const episodes = md.filter((f) => f !== settings && !parseNoteName(f.name)).sort((x, y) =>
+  const summaryFile = md.find((f) => f.name === SUMMARY);
+  const episodes = md.filter((f) => f !== settings && f !== summaryFile && !parseNoteName(f.name)).sort((x, y) =>
     (parseEpisodeName(x.name)?.num ?? Infinity) - (parseEpisodeName(y.name)?.num ?? Infinity) || x.name.replace(/\.md$/, '').localeCompare(y.name.replace(/\.md$/, ''), 'ko'));
   const row = (f) => {
     const ep = parseEpisodeName(f.name);
@@ -157,6 +159,7 @@ async function showNovel(folderId) {
   $app.innerHTML = `
     <header class="page-head"><a href="#/" class="place">작품</a><h1>${esc(folder.name)}</h1><p class="head-tools">${EXPORT_BUTTONS}<button class="link" id="tidy-notes">회차 설정 한 번에 정리</button><button class="link open-settings">설정</button><button class="link danger" id="delete-work">작품 휴지통으로</button></p></header>
     ${settings ? `<p class="memo"><a href="#/e/${folderId}/${settings.id}">설정 메모</a> 인물과 세계관을 적어 두는 곳</p>` : ''}
+    <p class="memo"><a href="${summaryFile ? `#/e/${folderId}/${summaryFile.id}` : '#'}" id="summary-link">오래된 화 요약</a> 최근 10화보다 앞 화 설정을 Claude가 줄여 둔 것</p>
     <ol class="episodes">${episodes.map(row).join('') || '<li class="empty">아직 회차가 없어요. 첫 회차를 만들어 보세요.</li>'}</ol>
     <button id="add" class="act">새 회차 만들기</button>`;
   for (const b of $app.querySelectorAll('[data-export]')) b.onclick = async () => {
@@ -169,6 +172,13 @@ async function showNovel(folderId) {
       download(`${folder.name}.${fmt}`, exportText(list.map((f, i) => ({ title: epLabel(f.name), text: texts[i] })), fmt, folder.name));
     } catch (e) { e.status === 401 ? needLogin() : alert(`내보내지 못했어요. ${e.message}`); }
     b.textContent = label;
+  };
+  if (!summaryFile) $app.querySelector('#summary-link').onclick = async (ev) => {
+    ev.preventDefault();
+    try {
+      const f = await drive.createText(SUMMARY, folderId, '');
+      location.hash = `#/e/${folderId}/${f.id}`;
+    } catch (e) { e.status === 401 ? needLogin() : alert(`요약 파일을 만들지 못했어요. ${e.message}`); }
   };
   $app.querySelector('#tidy-notes').onclick = async (ev) => {
     const notes = md.filter((f) => parseNoteName(f.name));
@@ -241,6 +251,7 @@ async function showEditor(folderId, fileId) {
           <h1 id="title"></h1>
           <p class="status" id="status"></p>
           <p class="tools">${isEpisode ? '<button id="rename" class="link">제목 바꾸기</button><button id="delete" class="link">휴지통으로</button>' + EXPORT_BUTTONS : ''}${isForm ? '<button id="raw" class="link">글자로 고치기</button>' : ''}<button class="link open-settings">설정</button></p>
+          ${meta.name === SUMMARY ? '<p class="ai-tools"><button type="button" id="ask-summary">Claude에게 요약 부탁 복사</button></p><p class="quiet" id="summary-msg" aria-live="polite">새 화가 쌓이면 다시 눌러 주세요. 요약 안 된 화만 더해서 부탁해요.</p>' : ''}
           <p class="ai-tools"><button type="button" class="open-ask">Claude에게 묻기</button><button type="button" class="open-apply">수정본 반영</button></p>
           <p class="no" id="no"></p>
         </div>
@@ -259,11 +270,26 @@ async function showEditor(folderId, fileId) {
   ta.value = text;
   editing = { folderId, fileId, name: meta.name, modifiedTime: meta.modifiedTime, dirty, timer: null, saving: false, pending: false, ta, lastCount: null, work: folder.name, memo: memo ?? '', note: note ?? '', noteId: noteFile?.id };
   // 지난 화 설정은 미리 읽어 둔다. 복사 버튼을 누른 뒤에 읽으면 휴대폰에서 클립보드 복사가 막힐 수 있다.
-  // shortcut: 오래된 화는 규칙으로 줄일 뿐이라 회차가 수백 개면 여전히 길다. 그때는 오래된 화를 Claude 요약 한 덩어리로 바꾼다.
-  const pastFiles = epNum ? siblings.map((f) => ({ f, num: parseNoteName(f.name) })).filter((x) => x.num && x.num < epNum).sort((a, b) => a.num - b.num) : [];
-  editing.past = Promise.all(pastFiles.map(({ f }) => drive.readText(f.id)))
-    .then((texts) => pastNotes(pastFiles.map(({ num }, i) => ({ num, text: texts[i] }))))
+  const isSummary = meta.name === SUMMARY;
+  const summaryFile = siblings.find((f) => f.name === SUMMARY && f.id !== fileId);
+  const noteFiles = siblings.map((f) => ({ f, num: parseNoteName(f.name) })).filter((x) => x.num && (isSummary || x.num < epNum)).sort((a, b) => a.num - b.num);
+  const readNotes = (epNum || isSummary) ? Promise.all(noteFiles.map(({ f }) => drive.readText(f.id))).then((texts) => noteFiles.map(({ num }, i) => ({ num, text: texts[i] }))) : Promise.resolve([]);
+  editing.past = Promise.all([readNotes, summaryFile ? drive.readText(summaryFile.id) : ''])
+    .then(([notes, summary]) => pastNotes(notes, 10, summary))
     .catch(() => '');
+  if (isSummary) {
+    const btn = $app.querySelector('#ask-summary'), msg = $app.querySelector('#summary-msg');
+    const notesP = readNotes.catch(() => null);
+    btn.onclick = async () => {
+      const notes = await notesP;
+      if (!notes) { msg.textContent = '회차 설정을 읽지 못했어요. 새로 고침해 주세요.'; return; }
+      const p = summaryPrompt({ work: folder.name, memo: memo ?? '', summary: ta.value, notes });
+      if (p === null) { msg.textContent = '지금은 요약할 화가 없어요. 회차가 11화를 넘으면, 최근 10화보다 앞 화부터 요약해요.'; return; }
+      msg.textContent = (await copyText(p, $app))
+        ? '복사했어요. Claude에 붙여 넣어 보내고, 받은 답 전체를 "수정본 반영"에 붙여 넣으세요.'
+        : '복사하지 못했어요. 브라우저의 클립보드 권한을 확인해 주세요.';
+    };
+  }
   renderHead();
   setStatus(dirty ? 'typing' : 'saved');
   if (dirty) save();

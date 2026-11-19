@@ -216,27 +216,57 @@ export function extractRevision(pasted) {
   return { mode: null, body: pasted.trim() };
 }
 
-// Claude에게 보낼 질문 한 덩어리
 // 지난 화 설정을 짧게: 채운 표 칸은 "항목: 내용", 목록은 그대로. 안내 문구와 빈칸은 뺀다.
-// 최근 recent화는 전부, 그 전 화는 뒤 화에도 이어지는 것(일어난 일과 정해 둔 설정 목록)만 남긴다.
-// 분위기·빼고 싶은 것·넣고 싶은 장면은 그 화에만 쓰이는 부탁이라 오래된 화에서는 뺀다.
+// full이 아니면 뒤 화에도 이어지는 것(일어난 일과 정해 둔 설정 목록)만 남긴다.
+const noteBrief = (num, text, full) => {
+  const keep = full ? (k) => k !== '몇 화' : (k) => k === '이번 화에서 일어날 일';
+  const lines = parseDoc(tidyNote(text)).flatMap((b) => {
+    if (b.rows) return b.rows.filter((r) => keep(r[0]) && r.slice(1).some(Boolean)).map((r) => `- ${r[0]}: ${r.slice(1).filter(Boolean).join(' / ')}`);
+    return b.text !== undefined ? b.text.split('\n').filter((l) => /^- \S/.test(l)) : [];
+  });
+  return lines.length ? `${num}화\n${lines.join('\n')}` : '';
+};
+const joinBriefs = (list, full) => list.map(({ num, text }) => noteBrief(num, text, full)).filter(Boolean).join('\n\n');
+
+// 요약 파일 첫 줄 "# 1~12화 요약"에서 몇 화까지 요약했는지 읽는다. 없으면 0.
+export const summaryUpto = (s) => Number(/^#\s*1\s*~\s*(\d+)\s*화\s*요약/m.exec(s)?.[1] ?? 0);
+
+// Claude에게 보낼 지난 화 설정. 최근 recent화는 전부, 그 전은 Claude 요약으로.
+// 요약이 아직 못 따라온 오래된 화는 규칙으로 줄여서 덧붙인다.
 // notes: [{ num, text }] 번호 순
-export function pastNotes(notes, recent = 10) {
-  const brief = (num, text, keep) => {
-    const lines = parseDoc(tidyNote(text)).flatMap((b) => {
-      if (b.rows) return b.rows.filter((r) => keep(r[0]) && r.slice(1).some(Boolean)).map((r) => `- ${r[0]}: ${r.slice(1).filter(Boolean).join(' / ')}`);
-      return b.text !== undefined ? b.text.split('\n').filter((l) => /^- \S/.test(l)) : [];
-    });
-    return lines.length ? `${num}화\n${lines.join('\n')}` : '';
-  };
+export function pastNotes(notes, recent = 10, summary = '') {
   const cut = Math.max(0, notes.length - recent);
-  const join = (list, keep) => list.map(({ num, text }) => brief(num, text, keep)).filter(Boolean).join('\n\n');
-  const old = join(notes.slice(0, cut), (k) => k === '이번 화에서 일어날 일');
-  const now = join(notes.slice(cut), (k) => k !== '몇 화');
-  if (!old) return now;
-  return `(${notes[0].num}~${notes[cut - 1].num}화: 중요한 것만)\n\n${old}\n\n(최근 ${notes.length - cut}화: 전부)\n\n${now}`;
+  const now = joinBriefs(notes.slice(cut), true);
+  if (!cut) return now;
+  let upto = summaryUpto(summary);
+  // 예전 화를 고칠 때는 요약에 그 뒤 일까지 들어 있으니 쓰지 않는다
+  if (upto > notes[notes.length - 1].num) { summary = ''; upto = 0; }
+  const old = [summary.trim(), joinBriefs(notes.slice(0, cut).filter((n) => n.num > upto), false)].filter(Boolean).join('\n\n');
+  return `(오래된 화: 중요한 것만)\n\n${old}\n\n(최근 ${notes.length - cut}화: 전부)\n\n${now}`;
 }
 
+// 오래된 화(최근 recent화 앞) 요약을 Claude에게 부탁하는 글. 이미 요약한 화는 요약으로, 그 뒤 화만 새로 보낸다.
+// 요약할 화가 없으면 null.
+export function summaryPrompt({ work, memo, summary = '', notes, recent = 10 }) {
+  const cut = notes.length - recent;
+  if (cut <= 0) return null;
+  const upto = notes[cut - 1].num, done = summaryUpto(summary);
+  const add = notes.slice(0, cut).filter((n) => n.num > done);
+  if (!add.length) return null;
+  return [
+    `[요청]\n웹소설 「${work}」의 ${upto}화까지 회차 설정을 하나로 요약해줘. 뒤 화를 쓸 때 설정이 어긋나지 않게 하려는 거야.\n`
+      + '- 앞으로도 지켜야 할 것만 남겨: 인물 관계와 사실, 이미 일어난 사건, 정해 둔 규칙, 아직 안 푼 떡밥.\n'
+      + '- 그 화에만 쓰인 분위기, 빼고 싶은 것 같은 부탁은 빼.\n'
+      + '- 작품 설정에 이미 있는 내용은 되풀이하지 마.\n'
+      + '- "- "로 시작하는 짧은 목록으로, 주제별로 묶어줘.\n'
+      + `- 답은 \`\`\`수정본 블록 하나에 담고, 첫 줄은 정확히 "# 1~${upto}화 요약"으로 써줘.`,
+    `[작품 설정]\n${memo.trim() || '(없음)'}`,
+    done && summary.trim() && `[지금까지 요약]\n${summary.trim()}\n\n이 요약에 아래 화를 합쳐서 새로 정리해줘.`,
+    `[${add[0].num}~${upto}화 설정]\n${joinBriefs(add, true)}`,
+  ].filter(Boolean).join('\n\n');
+}
+
+// Claude에게 보낼 질문 한 덩어리
 export function buildPrompt({ concept, request, extra, work, episode, memo, past = '', note = '', text }) {
   return [
     concept.trim() && `[너의 역할]\n${concept.trim()}`,

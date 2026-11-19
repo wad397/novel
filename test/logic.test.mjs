@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
-  episodeNoteName, parseNoteName, episodeTemplate, WORK_TEMPLATE, parseDoc, formatDoc, tidyNote, pastNotes, tableCells, isConflictCopy, exportText, countText, assist, diff, extractRevision, buildPrompt, isConflict, escapeQuery, sanitizeTitle,
+  episodeNoteName, parseNoteName, episodeTemplate, WORK_TEMPLATE, parseDoc, formatDoc, tidyNote, pastNotes, summaryPrompt, summaryUpto, tableCells, isConflictCopy, exportText, countText, assist, diff, extractRevision, buildPrompt, isConflict, escapeQuery, sanitizeTitle,
 } from '../logic.js';
 
 test('회차 파일 이름', () => {
@@ -185,8 +185,33 @@ test('지난 화 설정 모으기', () => {
 test('지난 화 설정: 최근 10화는 전부, 그 전은 중요한 것만', () => {
   const note = (n) => ({ num: n, text: `| 항목 | 내용 |\n|---|---|\n| 몇 화 | ${n}화 |\n| 이번 화에서 일어날 일 | 사건${n} |\n| 이번 화 분위기 | 밝게 |\n\n- 설정${n}\n` });
   const out = pastNotes(Array.from({ length: 12 }, (_, i) => note(i + 1)));
-  assert.match(out, /^\(1~2화: 중요한 것만\)\n\n1화\n- 이번 화에서 일어날 일: 사건1\n- 설정1\n\n2화/);
+  assert.match(out, /^\((오래된 화: 중요한 것만)\)\n\n1화\n- 이번 화에서 일어날 일: 사건1\n- 설정1\n\n2화/);
   assert.match(out, /\(최근 10화: 전부\)\n\n3화\n- 이번 화에서 일어날 일: 사건3\n- 이번 화 분위기: 밝게\n- 설정3/);
   assert.equal((out.match(/분위기/g) || []).length, 10);
   assert.doesNotMatch(pastNotes([note(1), note(2)]), /중요한 것만|최근/);
+});
+
+test('오래된 화는 Claude 요약으로', () => {
+  const note = (n) => ({ num: n, text: `| 항목 | 내용 |\n|---|---|\n| 이번 화에서 일어날 일 | 사건${n} |\n\n- 설정${n}\n` });
+  const notes = Array.from({ length: 13 }, (_, i) => note(i + 1));
+  assert.equal(summaryUpto('# 1~2화 요약\n- 요약'), 2);
+  assert.equal(summaryUpto('그냥 메모'), 0);
+  // 요약이 2화까지라 3화는 규칙으로 덧붙이고, 1~2화 원문은 빠진다
+  const out = pastNotes(notes, 10, '# 1~2화 요약\n- 큰 줄기');
+  assert.match(out, /^\((오래된 화: 중요한 것만)\)\n\n# 1~2화 요약\n- 큰 줄기\n\n3화\n- 이번 화에서 일어날 일: 사건3/);
+  assert.doesNotMatch(out, /사건1\n|설정2\n/);
+  // 부탁 글: 이미 요약한 1~2화는 요약으로, 3화만 새로
+  const p = summaryPrompt({ work: 'w', memo: '', summary: '# 1~2화 요약\n- 큰 줄기', notes });
+  assert.match(p, /첫 줄은 정확히 "# 1~3화 요약"/);
+  assert.match(p, /\[지금까지 요약\]\n# 1~2화 요약/);
+  assert.match(p, /\[3~3화 설정\]\n3화\n/);
+  assert.doesNotMatch(p, /사건1\n/);
+  assert.equal(summaryPrompt({ work: 'w', memo: '', notes: notes.slice(0, 10) }), null);
+  assert.equal(summaryPrompt({ work: 'w', memo: '', summary: '# 1~3화 요약', notes }), null);
+});
+
+test('뒤 화까지 들어간 요약은 앞 화를 고칠 때 쓰지 않는다', () => {
+  const notes = Array.from({ length: 12 }, (_, i) => ({ num: i + 1, text: `- 설정${i + 1}\n` }));
+  assert.doesNotMatch(pastNotes(notes, 10, '# 1~13화 요약\n- 미래'), /미래/);
+  assert.match(pastNotes(notes, 10, '# 1~13화 요약\n- 미래'), /1화\n- 설정1/);
 });
