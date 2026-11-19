@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
-  episodeNoteName, parseNoteName, episodeTemplate, WORK_TEMPLATE, parseDoc, formatDoc, tableCells, isConflictCopy, exportText, countText, assist, diff, extractRevision, buildPrompt, isConflict, escapeQuery, sanitizeTitle,
+  episodeNoteName, parseNoteName, episodeTemplate, WORK_TEMPLATE, parseDoc, formatDoc, tidyNote, tableCells, isConflictCopy, exportText, countText, assist, diff, extractRevision, buildPrompt, isConflict, escapeQuery, sanitizeTitle,
 } from '../logic.js';
 
 test('회차 파일 이름', () => {
@@ -166,4 +166,10 @@ test('내보내기', () => {
   assert.equal(exportText(eps, 'txt', '작품'), '작품\n\n\n1화 시작\n\n첫 문장\n\n둘째 문단\n\n\n2화 밤\n\n밤이다\n');
   assert.ok(isConflictCopy('001 - 시작 (충돌 2026-11-14 10-30).md'));
   assert.ok(!isConflictCopy('001 - 시작.md'));
+});
+
+test('목록 기호 맞추기', () => {
+  assert.equal(tidyNote('• 가\n-나\n* 다\n- 라\n-\n---\n| 항목 | 내용 |\n**굵게**'), '- 가\n- 나\n- 다\n- 라\n-\n---\n| 항목 | 내용 |\n**굵게**');
+  assert.equal(tidyNote(episodeTemplate(2)), episodeTemplate(2));
+  assert.equal(tidyNote(WORK_TEMPLATE), WORK_TEMPLATE);
 });

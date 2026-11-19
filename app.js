@@ -1,7 +1,7 @@
 import * as drive from './drive.js';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
-  episodeNoteName, parseNoteName, WORK_TEMPLATE, episodeTemplate, parseDoc, formatDoc,
+  episodeNoteName, parseNoteName, WORK_TEMPLATE, episodeTemplate, parseDoc, formatDoc, tidyNote,
   countText, assist, diff, extractRevision, buildPrompt, isConflict, sanitizeTitle, isConflictCopy, exportText,
 } from './logic.js';
 
@@ -155,7 +155,7 @@ async function showNovel(folderId) {
     return `<li><a href="#/e/${folderId}/${f.id}"><span class="no">${ep ? String(ep.num).padStart(3, '0') : ''}</span><span class="ep-title">${esc(ep ? ep.title : displayName(f.name))}</span><span class="date">${day(f.modifiedTime)}</span></a></li>`;
   };
   $app.innerHTML = `
-    <header class="page-head"><a href="#/" class="place">작품</a><h1>${esc(folder.name)}</h1><p class="head-tools">${EXPORT_BUTTONS}<button class="link open-settings">설정</button><button class="link danger" id="delete-work">작품 휴지통으로</button></p></header>
+    <header class="page-head"><a href="#/" class="place">작품</a><h1>${esc(folder.name)}</h1><p class="head-tools">${EXPORT_BUTTONS}<button class="link" id="tidy-notes">회차 설정 한 번에 정리</button><button class="link open-settings">설정</button><button class="link danger" id="delete-work">작품 휴지통으로</button></p></header>
     ${settings ? `<p class="memo"><a href="#/e/${folderId}/${settings.id}">설정 메모</a> 인물과 세계관을 적어 두는 곳</p>` : ''}
     <ol class="episodes">${episodes.map(row).join('') || '<li class="empty">아직 회차가 없어요. 첫 회차를 만들어 보세요.</li>'}</ol>
     <button id="add" class="act">새 회차 만들기</button>`;
@@ -169,6 +169,24 @@ async function showNovel(folderId) {
       download(`${folder.name}.${fmt}`, exportText(list.map((f, i) => ({ title: epLabel(f.name), text: texts[i] })), fmt, folder.name));
     } catch (e) { e.status === 401 ? needLogin() : alert(`내보내지 못했어요. ${e.message}`); }
     b.textContent = label;
+  };
+  $app.querySelector('#tidy-notes').onclick = async (ev) => {
+    const notes = md.filter((f) => parseNoteName(f.name));
+    const have = new Set(notes.map((f) => parseNoteName(f.name)));
+    const missing = [...new Set(episodes.filter((f) => !isConflictCopy(f.name)).map((f) => parseEpisodeName(f.name)?.num))]
+      .filter((n) => n && !have.has(n));
+    if (!confirm(`회차 설정 ${notes.length}개의 목록 기호(•, -글자)를 칸 화면에서 고칠 수 있게 "- "로 맞출까요?${missing.length ? `\n설정이 없는 ${missing.join(', ')}화는 빈 양식을 만들어요.` : ''}\n바뀌기 전 내용은 드라이브 버전 기록에 남아요.`)) return;
+    ev.target.textContent = '정리하는 중…';
+    try {
+      const texts = await Promise.all(notes.map((f) => drive.readText(f.id)));
+      const changed = notes.filter((f, i) => tidyNote(texts[i]) !== texts[i]);
+      await Promise.all([
+        ...changed.map((f) => drive.updateText(f.id, tidyNote(texts[notes.indexOf(f)]))),
+        ...missing.map((n) => drive.createText(episodeNoteName(n), folderId, episodeTemplate(n))),
+      ]);
+      alert(`고친 설정 ${changed.length}개, 새로 만든 설정 ${missing.length}개예요.`);
+      showNovel(folderId);
+    } catch (e) { e.status === 401 ? needLogin() : alert(`정리하지 못했어요. ${e.message}`); ev.target.textContent = '회차 설정 한 번에 정리'; }
   };
   $app.querySelector('#delete-work').onclick = async () => {
     if (!confirm(`"${folder.name}" 작품을 회차 ${episodes.length}개와 설정 메모까지 모두 드라이브 휴지통으로 옮길까요?\n30일 안에는 드라이브 휴지통에서 되살릴 수 있어요.`)) return;
@@ -316,7 +334,7 @@ function setupForm(ta, box) {
     box.innerHTML = blocks.map((b, i) => {
       if (b.head) return /^#\s/.test(b.head) ? `<h1>${esc(b.head.replace(/^#\s*/, ''))}</h1>` : `<h2>${esc(b.head.replace(/^#+\s*/, ''))}</h2>`;
       if (b.text !== undefined) {
-        return /^\s*-(\s|$)/m.test(b.text)
+        return /^\s*(-(\s|$)|[-•·]\S|[•·*]\s)/m.test(b.text)
           ? `<textarea class="free" rows="2" data-b="${i}" aria-label="내용">${esc(b.text)}</textarea>`
           : `<p class="hint">${b.text.split('\n').map(esc).join('<br>')}</p>`;
       }

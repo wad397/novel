@@ -113,6 +113,9 @@ const row = (cells) => `| ${cells.map(cell).join(' | ')} |`;
 export const formatDoc = (blocks) => blocks.map((b) =>
   b.head ?? b.text ?? [row(b.cols), `|${b.cols.map(() => '---').join('|')}|`, ...b.rows.map(row)].join('\n')).join('\n\n') + '\n';
 
+// 붙여 넣은 목록 기호(•, ·, *, 띄어쓰기 없는 -)를 "- "로 맞춘다. 칸 화면은 "- "만 목록으로 본다.
+export const tidyNote = (text) => text.replace(/^[ \t]*(?:[•·▪◦]|\*(?=\s)|-(?=[^\s-]))[ \t]*/gm, '- ');
+
 export function conflictFileName(name, date) {
   const p = (n) => String(n).padStart(2, '0');
   const stamp = `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())} ${p(date.getHours())}-${p(date.getMinutes())}`;
