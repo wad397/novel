@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
-  episodeNoteName, parseNoteName, episodeTemplate, WORK_TEMPLATE, parseDoc, formatDoc, tidyNote, tableCells, isConflictCopy, exportText, countText, assist, diff, extractRevision, buildPrompt, isConflict, escapeQuery, sanitizeTitle,
+  episodeNoteName, parseNoteName, episodeTemplate, WORK_TEMPLATE, parseDoc, formatDoc, tidyNote, pastNotes, tableCells, isConflictCopy, exportText, countText, assist, diff, extractRevision, buildPrompt, isConflict, escapeQuery, sanitizeTitle,
 } from '../logic.js';
 
 test('회차 파일 이름', () => {
@@ -172,4 +172,12 @@ test('목록 기호 맞추기', () => {
   assert.equal(tidyNote('• 가\n-나\n* 다\n- 라\n-\n---\n| 항목 | 내용 |\n**굵게**'), '- 가\n- 나\n- 다\n- 라\n-\n---\n| 항목 | 내용 |\n**굵게**');
   assert.equal(tidyNote(episodeTemplate(2)), episodeTemplate(2));
   assert.equal(tidyNote(WORK_TEMPLATE), WORK_TEMPLATE);
+});
+
+test('지난 화 설정 모으기', () => {
+  const one = episodeTemplate(1).replace('| 이번 화에서 일어날 일 |  |', '| 이번 화에서 일어날 일 | 환생 |').replace(/^-$/m, '-엄마는 화내지 않음');
+  assert.equal(pastNotes([{ num: 1, text: one }, { num: 2, text: episodeTemplate(2) }]), '1화\n- 이번 화에서 일어날 일: 환생\n- 엄마는 화내지 않음');
+  assert.equal(pastNotes([]), '');
+  const p = buildPrompt({ concept: '', request: 'r', extra: '', work: 'w', episode: 'e', memo: 'm', past: '1화\n- 환생', note: 'n', text: 't' });
+  assert.match(p, /\[지난 화 설정\]\n1화\n- 환생\n\n\[이번 화 설정\]/);
 });

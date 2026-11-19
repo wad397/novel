@@ -217,15 +217,27 @@ export function extractRevision(pasted) {
 }
 
 // Claude에게 보낼 질문 한 덩어리
-export function buildPrompt({ concept, request, extra, work, episode, memo, note = '', text }) {
+// 지난 화 설정을 짧게: 채운 표 칸은 "항목: 내용", 목록은 그대로. 안내 문구와 빈칸은 뺀다.
+// notes: [{ num, text }]
+export const pastNotes = (notes) => notes.map(({ num, text }) => {
+  const lines = parseDoc(tidyNote(text)).flatMap((b) => {
+    if (b.rows) return b.rows.filter((r) => r[0] !== '몇 화' && r.slice(1).some(Boolean)).map((r) => `- ${r[0]}: ${r.slice(1).filter(Boolean).join(' / ')}`);
+    return b.text !== undefined ? b.text.split('\n').filter((l) => /^- \S/.test(l)) : [];
+  });
+  return lines.length ? `${num}화\n${lines.join('\n')}` : '';
+}).filter(Boolean).join('\n\n');
+
+export function buildPrompt({ concept, request, extra, work, episode, memo, past = '', note = '', text }) {
   return [
     concept.trim() && `[너의 역할]\n${concept.trim()}`,
     `[요청]\n${[request, extra.trim()].filter(Boolean).join('\n')}`,
     `[작품] ${work}\n[회차] ${episode}`,
     `[설정 메모]\n${memo.trim() || '(없음)'}`,
+    past.trim() && `[지난 화 설정]\n${past.trim()}`,
     note.trim() && `[이번 화 설정]\n${note.trim()}`,
     `[본문]\n${text}`,
     '[답하는 방법]\n'
+      + '- 요청한 내용이 설정 메모나 지난 화 설정과 어긋나면, 답 맨 앞에 어느 설정과 어떻게 부딪히는지 먼저 짧게 알려줘. 원고는 이미 정해진 설정을 따라.\n'
       + '- 원고를 고쳐 달라는 요청이면 설명은 짧게 하고, 고친 회차 전체를 ```수정본 으로 시작하는 코드 블록 하나에 담아줘. 고치지 않은 문장도 빠짐없이 그대로 넣어줘.\n'
       + '- 이어 쓸 장면을 부탁하면 새로 쓴 부분만 ```이어쓰기 로 시작하는 코드 블록 하나에 담아줘.\n'
       + '- 피드백이나 검토만 부탁하면 코드 블록 없이 답해줘.',

@@ -1,7 +1,7 @@
 import * as drive from './drive.js';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
-  episodeNoteName, parseNoteName, WORK_TEMPLATE, episodeTemplate, parseDoc, formatDoc, tidyNote,
+  episodeNoteName, parseNoteName, WORK_TEMPLATE, episodeTemplate, parseDoc, formatDoc, tidyNote, pastNotes,
   countText, assist, diff, extractRevision, buildPrompt, isConflict, sanitizeTitle, isConflictCopy, exportText,
 } from './logic.js';
 
@@ -258,6 +258,12 @@ async function showEditor(folderId, fileId) {
   const ta = $app.querySelector('#text');
   ta.value = text;
   editing = { folderId, fileId, name: meta.name, modifiedTime: meta.modifiedTime, dirty, timer: null, saving: false, pending: false, ta, lastCount: null, work: folder.name, memo: memo ?? '', note: note ?? '', noteId: noteFile?.id };
+  // 지난 화 설정은 미리 읽어 둔다. 복사 버튼을 누른 뒤에 읽으면 휴대폰에서 클립보드 복사가 막힐 수 있다.
+  // shortcut: 회차가 수백 개면 전부 붙여서 길어진다. 그때는 최근 N화만 보내게 줄인다.
+  const pastFiles = epNum ? siblings.map((f) => ({ f, num: parseNoteName(f.name) })).filter((x) => x.num && x.num < epNum).sort((a, b) => a.num - b.num) : [];
+  editing.past = Promise.all(pastFiles.map(({ f }) => drive.readText(f.id)))
+    .then((texts) => pastNotes(pastFiles.map(({ num }, i) => ({ num, text: texts[i] }))))
+    .catch(() => '');
   renderHead();
   setStatus(dirty ? 'typing' : 'saved');
   if (dirty) save();
@@ -438,7 +444,7 @@ const PRESETS = {
     + '본문에 이미 쓴 글이 있으면 살려서 이어 가. 빈칸은 네가 정하고, 뭘 정했는지 코드 블록 밖에 짧게 적어줘. '
     + '너의 역할에 적힌 말투는 설명할 때만 쓰고 원고 문체에는 섞지 마. 완성한 원고 전체를 ```수정본 블록 하나에 담아줘.',
   feedback: '이 회차를 읽고 좋은 점과 고칠 점을 구체적으로 알려줘. 원고는 고치지 말고 의견만 줘.',
-  check: '설정 메모와 어긋나거나 앞뒤가 맞지 않는 부분을 찾아서, 해당 문장을 인용하고 왜 어긋나는지 알려줘.',
+  check: '설정 메모, 지난 화 설정과 어긋나거나 앞뒤가 맞지 않는 부분을 찾아서, 해당 문장을 인용하고 왜 어긋나는지 알려줘.',
   polish: '문체와 내용은 그대로 두고 어색한 문장, 맞춤법, 띄어쓰기를 고쳐줘.',
   continue: '이 회차 마지막 장면에서 자연스럽게 이어지는 다음 장면 초안을 써줘.',
   free: '',
@@ -459,6 +465,7 @@ function setupAi() {
     const text = buildPrompt({
       concept: aiSettings.concept, request: PRESETS[af.preset.value], extra: af.extra.value, work: editing.work,
       episode: ep ? `${ep.num}화 ${ep.title}` : displayName(editing.name), memo: editing.memo, note: editing.note, text: editing.ta.value,
+      past: af.past.checked ? await editing.past : '',
     });
     done.textContent = (await copyText(text, $ask))
       ? '복사했어요. Claude를 열고 입력칸에 붙여 넣어 보내세요.'
