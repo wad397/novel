@@ -163,11 +163,11 @@ async function showNovel(folderId) {
   $app.innerHTML = `
     <header class="page-head"><a href="#/" class="place">작품</a><h1>${esc(folder.name)}</h1><p class="head-tools">${EXPORT_BUTTONS}<button class="link" id="tidy-notes">회차 설정 한 번에 정리</button>${copies.length ? `<button class="link danger" id="trash-copies">충돌 사본 ${copies.length}개 지우기</button>` : ''}<button class="link open-settings">설정</button><button class="link danger" id="delete-work">작품 휴지통으로</button></p></header>
     <nav class="shelf" aria-label="작품 자료">
-      ${settings ? `<a href="#/e/${folderId}/${settings.id}"><b>설정 메모</b><small>작품 정보, 세계관, 떠올린 장면</small></a>` : ''}
-      <a href="${castFile ? `#/p/${folderId}/${castFile.id}` : '#'}" id="cast-link"><b>인물 설정</b><small>생김새부터 아는 것까지 인물마다</small></a>
-      <a href="${summaryFile ? `#/e/${folderId}/${summaryFile.id}` : '#'}" id="summary-link"><b>오래된 화 요약</b><small>최근 10화 앞을 Claude가 줄여 둔 것</small></a>
+      ${settings ? `<a href="#/e/${folderId}/${settings.id}"><i>작품</i><b>설정 메모</b><small>작품 정보, 세계관, 떠올린 장면</small></a>` : ''}
+      <a href="${castFile ? `#/p/${folderId}/${castFile.id}` : '#'}" id="cast-link"><i>인물</i><b>인물 설정</b><small>생김새부터 아는 것까지 인물마다</small></a>
+      <a href="${summaryFile ? `#/e/${folderId}/${summaryFile.id}` : '#'}" id="summary-link"><i>Claude</i><b>오래된 화 요약</b><small>최근 10화 앞을 Claude가 줄여 둔 것</small></a>
     </nav>
-    <p class="list-label">회차 ${episodes.filter((f) => parseEpisodeName(f.name)).length}</p>
+    <p class="list-label">회차 · ${episodes.filter((f) => parseEpisodeName(f.name)).length}</p>
     <ol class="episodes">${episodes.map(row).join('') || '<li class="empty">아직 회차가 없어요. 첫 회차를 만들어 보세요.</li>'}</ol>
     <button id="add" class="act">새 회차 만들기</button>`;
   for (const b of $app.querySelectorAll('[data-export]')) b.onclick = async () => {
