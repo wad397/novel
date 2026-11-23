@@ -1,7 +1,7 @@
 import * as drive from './drive.js';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
-  episodeNoteName, parseNoteName, WORK_TEMPLATE, addSeedScene, castTemplate, CAST_CARD, takeCast, cardRange, castCards, episodeTemplate, parseDoc, formatDoc, tidyNote, pastNotes, summaryPrompt,
+  episodeNoteName, parseNoteName, WORK_TEMPLATE, addSeedScene, castTemplate, CAST_CARD, takeCast, cardRange, castCards, addRelations, castRelations, episodeTemplate, parseDoc, formatDoc, tidyNote, pastNotes, summaryPrompt,
   countText, assist, diff, extractRevision, buildPrompt, isConflict, sanitizeTitle, isConflictCopy, exportText,
 } from './logic.js';
 
@@ -121,6 +121,7 @@ async function route() {
     if (kind === 'n') await showNovel(a);
     else if (kind === 'e') await showEditor(a, b, c === undefined ? null : Number(c));
     else if (kind === 'p') await showCast(a, b);
+    else if (kind === 'r') await showRelations(a, b, c === undefined ? null : Number(c));
     else await showNovels();
   } catch (e) { failed(e, route); }
 }
@@ -259,7 +260,7 @@ async function showCast(folderId, fileId) {
   const [folder, text] = await Promise.all([drive.getMeta(folderId), drive.readText(fileId)]);
   const cards = castCards(parseDoc(text));
   $app.innerHTML = `
-    <header class="page-head"><a href="#/n/${folderId}" class="place">${esc(folder.name)}</a><h1>인물 설정</h1><p class="head-tools"><a class="link" href="#/e/${folderId}/${fileId}">한 화면에서 모두 고치기</a></p></header>
+    <header class="page-head"><a href="#/n/${folderId}" class="place">${esc(folder.name)}</a><h1>인물 설정</h1><p class="head-tools"><a class="link" href="#/r/${folderId}/${fileId}">관계도 보기</a><a class="link" href="#/e/${folderId}/${fileId}">한 화면에서 모두 고치기</a></p></header>
     <ol class="episodes">${cards.map((c, k) => `<li><a href="#/e/${folderId}/${fileId}/${k}"><span class="no">${String(k + 1).padStart(2, '0')}</span><span class="ep-title">${esc(c.title)}</span><span class="date">${esc([c.name !== c.title && c.name, c.role].filter(Boolean).join(' · '))}</span></a></li>`).join('') || '<li class="empty">아직 인물이 없어요. 첫 인물을 만들어 보세요.</li>'}</ol>
     <button id="add" class="act">새 인물 만들기</button>`;
   $app.querySelector('#add').onclick = async () => {
@@ -271,6 +272,71 @@ async function showCast(folderId, fileId) {
       location.hash = `#/e/${folderId}/${fileId}/${castCards(parseDoc(now)).length}`;
     } catch (e) { e.status === 401 ? needLogin() : alert(`인물을 만들지 못했어요. ${e.message}`); }
   };
+}
+
+// 관계도. card가 있으면 그 인물을 가운데 두고 이어진 인물만, 없으면 모든 인물을 둥글게 놓는다.
+async function showRelations(folderId, fileId, card) {
+  $app.innerHTML = LOADING;
+  const [folder, text] = await Promise.all([drive.getMeta(folderId), drive.readText(fileId)]);
+  const { nodes, edges } = castRelations(parseDoc(addRelations(text)));
+  const center = card === null ? null : nodes.find((n) => n.card === card) ?? null;
+  const shown = center ? edges.filter((e) => e.from === center.key || e.to === center.key) : edges;
+  const keep = new Set(center ? [center.key, ...shown.flatMap((e) => [e.from, e.to])] : nodes.map((n) => n.key));
+  const ring = nodes.filter((n) => keep.has(n.key) && n !== center);
+  const R = ring.length < 2 ? 230 : Math.max(280, ring.length * 52);
+  const pos = new Map(ring.map((n, i) => {
+    const a = -Math.PI / 2 + (2 * Math.PI * i) / ring.length;
+    return [n.key, { x: Math.cos(a) * R, y: Math.sin(a) * R }];
+  }));
+  if (center) pos.set(center.key, { x: 0, y: 0 });
+  const rad = (key) => (key === center?.key ? 44 : 32);
+  const byKey = new Map(nodes.map((n) => [n.key, n]));
+  const cut = (s, n) => (s.length > n ? `${s.slice(0, n)}…` : s);
+  const toward = (p, q, d) => { const l = Math.hypot(q.x - p.x, q.y - p.y) || 1; return { x: p.x + ((q.x - p.x) / l) * d, y: p.y + ((q.y - p.y) / l) * d }; };
+  const f = (v) => v.toFixed(1);
+
+  // 서로 가리키는 두 관계는 양쪽 화살표 선 하나로 묶고, 이름표를 두 줄로 단다
+  const short = (key) => cut(byKey.get(key).name || byKey.get(key).title, 6);
+  const edgeSvg = shown.filter((e, i) => !shown.slice(0, i).some((g) => g.from === e.to && g.to === e.from)).map((e) => {
+    const back = shown.find((g) => g.from === e.to && g.to === e.from);
+    const a = pos.get(e.from), b = pos.get(e.to);
+    const s = toward(a, b, rad(e.from) + (back ? 5 : 0)), t = toward(b, a, rad(e.to) + 5);
+    const m = { x: (s.x + t.x) / 2, y: (s.y + t.y) / 2 };
+    const lines = back ? [[e.from, e.label], [back.from, back.label]].filter(([, l]) => l).map(([k, l]) => `${short(k)}: ${l}`) : [e.label].filter(Boolean);
+    const tip = [e, back].filter(Boolean).map((x) => `${byKey.get(x.from).title} → ${byKey.get(x.to).title}${x.label ? `: ${x.label}` : ''}`).join('\n');
+    const label = lines.length ? `<text class="rel-label" x="${f(m.x)}" y="${f(m.y)}">${lines.map((l, k) => `<tspan x="${f(m.x)}" dy="${k ? '1.25em' : lines.length > 1 ? '-0.2em' : '0.35em'}">${esc(cut(l, 16))}</tspan>`).join('')}</text>` : '';
+    return `<g><title>${esc(tip)}</title><path class="rel-edge" d="M${f(s.x)} ${f(s.y)} L${f(t.x)} ${f(t.y)}" marker-end="url(#rel-arrow)"${back ? ' marker-start="url(#rel-arrow)"' : ''}/>${label}</g>`;
+  }).join('');
+  const nodeSvg = [...pos].map(([key, p]) => {
+    const n = byKey.get(key), r = rad(key);
+    const up = p.y < -1; // 위쪽 인물은 이름을 원 위에 적어서 가운데로 가는 선과 겹치지 않게
+    // 가운데 인물은 선이 사방으로 나가니 이름을 원 안에 적는다
+    const inner = key === center?.key ? `<text class="rel-initial">${esc(cut(n.name || n.title, 4))}</text>`
+      : `<text class="rel-initial">${esc((n.name || n.title).slice(0, 1))}</text>
+      <text class="rel-name" y="${up ? -(r + (n.role ? 32 : 12)) : r + 25}">${esc(cut(n.title, 12))}</text>${n.role ? `<text class="rel-role" y="${up ? -(r + 10) : r + 45}">${esc(cut(n.role, 14))}</text>` : ''}`;
+    const g = `<g class="rel-node${key === center?.key ? ' center' : ''}${n.card === null ? ' outside' : ''}" transform="translate(${f(p.x)} ${f(p.y)})">
+      <title>${esc(n.title)}${n.card === null ? ' (인물 카드 없음)' : ''}</title>
+      <circle r="${r}"/>${inner}</g>`;
+    if (n.card === null) return g;
+    // 가운데 인물은 카드로, 다른 인물은 그 인물의 관계도로
+    return `<a href="#/${key === center?.key ? 'e' : 'r'}/${folderId}/${fileId}/${n.card}">${g}</a>`;
+  }).join('');
+  const xs = [...pos.values()].map((p) => p.x), ys = [...pos.values()].map((p) => p.y);
+  const box = xs.length ? [Math.min(...xs) - 110, Math.min(...ys) - 100, Math.max(...xs) - Math.min(...xs) + 220, Math.max(...ys) - Math.min(...ys) + 190] : [0, 0, 1, 1];
+  const listItems = shown.map((e) => `<li><b>${esc(byKey.get(e.from).title)}</b> → <b>${esc(byKey.get(e.to).title)}</b>${e.label ? ` <span>${esc(e.label)}</span>` : ''}</li>`).join('');
+
+  $app.innerHTML = `
+    <header class="page-head"><a href="#/p/${folderId}/${fileId}" class="place">${esc(folder.name)} · 인물 설정</a><h1>${center ? `${esc(center.title)}의 관계` : '관계도'}</h1>
+      <p class="head-tools">${center ? `<a class="link" href="#/e/${folderId}/${fileId}/${center.card}">카드 열기</a><a class="link" href="#/r/${folderId}/${fileId}">전체 관계도</a>` : ''}<a class="link" href="#/p/${folderId}/${fileId}">인물 목록</a></p></header>
+    ${shown.length ? `<figure class="rel-map">
+      <svg viewBox="${box.map(f).join(' ')}" role="img" aria-label="${center ? `${esc(center.title)}의 관계도` : '인물 관계도'}">
+        <defs><marker id="rel-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="rel-tip"/></marker></defs>
+        ${edgeSvg}${nodeSvg}
+      </svg>
+      <figcaption class="quiet">${center ? '다른 인물을 누르면 그 인물의 관계도로, 가운데 인물을 누르면 카드로 가요.' : '인물을 누르면 그 인물을 가운데 둔 관계도로 가요.'} 점선은 아직 카드가 없는 인물이에요.</figcaption>
+    </figure>
+    <ul class="rel-list">${listItems}</ul>`
+    : `<p class="empty">아직 이어진 관계가 없어요. 인물 카드의 "다른 인물과의 관계"에서 상대 칸에 다른 인물의 이름을 적어 주세요.</p>`}`;
 }
 
 async function showEditor(folderId, fileId, card = null) {
@@ -285,7 +351,7 @@ async function showEditor(folderId, fileId, card = null) {
   const [memo, note, cast] = await Promise.all([memoFile, noteFile, castFile].map((f) => (f ? drive.readText(f.id) : null)));
   // 비어 있는 작품 설정을 열면 양식을 채워서 보여 준다. 고치기 전에는 저장하지 않는다.
   // 예전 작품 설정에는 "처음 떠올린 장면" 칸을 끼워서 보여 준다. 이것도 고치기 전에는 저장하지 않는다.
-  let text = meta.name === SETTINGS ? (remote ? addSeedScene(remote) : WORK_TEMPLATE) : remote, dirty = false;
+  let text = meta.name === SETTINGS ? (remote ? addSeedScene(remote) : WORK_TEMPLATE) : meta.name === CAST ? addRelations(remote) : remote, dirty = false;
   const draft = store.get(fileId);
   if (draft && draft.text !== remote) {
     if (confirm(`이 기기에 저장되지 않은 글이 있어요 (${new Date(draft.at).toLocaleString()}).\n불러올까요? 취소하면 드라이브의 글을 엽니다.`)) {
@@ -306,7 +372,7 @@ async function showEditor(folderId, fileId, card = null) {
           ${card === null ? `<a href="#/n/${folderId}" class="place">${esc(folder.name)}</a>` : `<a href="#/p/${folderId}/${fileId}" class="place">${esc(folder.name)} · 인물 설정</a>`}
           <h1 id="title"></h1>
           <p class="status" id="status"></p>
-          <p class="tools">${isEpisode ? '<button id="rename" class="link">제목 바꾸기</button><button id="delete" class="link">휴지통으로</button>' + EXPORT_BUTTONS : isConflictCopy(meta.name) ? '<button id="delete" class="link">휴지통으로</button>' : ''}${card !== null ? '<button id="del-card" class="link danger">이 인물 지우기</button>' : isForm ? '<button id="raw" class="link">글자로 고치기</button>' : ''}<button class="link open-settings">설정</button></p>
+          <p class="tools">${isEpisode ? '<button id="rename" class="link">제목 바꾸기</button><button id="delete" class="link">휴지통으로</button>' + EXPORT_BUTTONS : isConflictCopy(meta.name) ? '<button id="delete" class="link">휴지통으로</button>' : ''}${card !== null ? `<a class="link" href="#/r/${folderId}/${fileId}/${card}">관계도 보기</a><button id="del-card" class="link danger">이 인물 지우기</button>` : isForm ? '<button id="raw" class="link">글자로 고치기</button>' : ''}<button class="link open-settings">설정</button></p>
           ${meta.name === SUMMARY ? '<p class="ai-tools"><button type="button" id="ask-summary">Claude에게 요약 부탁 복사</button></p><p class="quiet" id="summary-msg" aria-live="polite">새 화가 쌓이면 다시 눌러 주세요. 요약 안 된 화만 더해서 부탁해요.</p>' : ''}
           <p class="ai-tools"><button type="button" class="open-ask">Claude에게 묻기</button><button type="button" class="open-apply">수정본 반영</button></p>
           <p class="no" id="no"></p>

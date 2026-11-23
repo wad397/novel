@@ -84,21 +84,26 @@ ${SEED_BLOCK}
 
 // 인물 설정(인물.md): 인물마다 카드 하나. 카드 안 표의 이름표를 예전 인물 카드 표의 칸 이름과 맞춰 둬서 옮길 때 그대로 채운다.
 const CAST_PARTS = [
-  ['기본', ['이름', '역할', '나이 / 학년·직업', '성별', '원하는 것', '두려워하는 것 / 약점', '다른 인물과의 관계']],
+  ['기본', ['이름', '역할', '나이 / 학년·직업', '성별', '원하는 것', '두려워하는 것 / 약점']],
   ['생김새 (이것만 보고 그림을 그릴 수 있게)', ['키 / 체격', '얼굴형 / 피부', '눈 (모양·색·인상)', '눈썹·코·입', '머리 (색·길이·모양)', '평소 옷차림', '자주 짓는 표정 / 자세', '첫인상 한 줄']],
   ['몸 특이사항', ['흉터·점·문신 (위치까지)', '안경·손잡이·시력', '건강·장애·체질', '목소리', '몸에 밴 버릇']],
   ['성격과 말투', ['성격 한 줄', '말버릇 / 말투', '예시 대사', '절대 안 하는 행동', '특이점']],
   ['아는 것과 모르는 것', ['관심 분야와 수준', '잘 아는 것', '모르는 것 / 틀리게 아는 것', '아는 걸 쓰는 버릇']],
 ];
 const CAST_ALIAS = { '나이 / 학년·직업': '직업' }; // 예전 칸 이름
+// 관계는 "상대 | 관계" 표. 상대 칸에 다른 카드의 이름이나 제목을 적으면 관계도에서 선으로 잇는다.
+const REL_HEAD = '### 다른 인물과의 관계';
+const REL_HINT = '상대 칸에 인물 카드 이름을 그대로 적으면 관계도에서 선으로 이어져요.';
+const REL_COLS = ['상대', '관계'];
+const relBlock = () => `${REL_HEAD}\n\n${REL_HINT}\n\n| 상대 | 관계 |\n|---|---|\n|  |  |\n`;
 const castCard = (p = {}) => `## ${p['이름']?.trim() || '인물'}
 
-${CAST_PARTS.map(([part, rows]) => `### ${part}
+${CAST_PARTS.map(([part, rows], i) => `### ${part}
 
 | 항목 | 내용 |
 |---|---|
 ${rows.map((r) => `| ${r} | ${(p[r] ?? p[CAST_ALIAS[r]] ?? '').trim()} |`).join('\n')}
-`).join('\n')}
+${i === 0 ? `\n${relBlock()}` : ''}`).join('\n')}
 ### 이야기 중에 새로 알게 된 것·바뀐 것
 
 "23화: 상담 선생님에게 '투사'를 배움", "40화: 왼손에 화상"처럼 화와 함께 적어요.
@@ -132,6 +137,46 @@ export function castCards(blocks) {
     const title = blocks[from].head.replace(/^##\s*/, '');
     out.push({ title: title === '인물' && get('이름') ? get('이름') : title, name: get('이름'), role: get('역할') }); // 제목을 안 바꾼 카드는 이름으로
   }
+}
+
+// 관계 표가 없는 예전 카드에 끼워 넣는다. 기본 표의 "다른 인물과의 관계" 줄은 빼서 관계 칸으로 옮긴다.
+export function addRelations(text) {
+  const blocks = parseDoc(text);
+  let changed = false;
+  for (let k = 0; ; k++) {
+    const [from, to] = cardRange(blocks, k);
+    if (from === to) break;
+    const card = blocks.slice(from, to);
+    if (card.some((b) => b.head === REL_HEAD)) continue;
+    const basic = card.find((b) => b.cols?.[0] === '항목' && b.rows.some((r) => r[0] === '이름'));
+    const i = basic ? basic.rows.findIndex((r) => r[0] === '다른 인물과의 관계') : -1;
+    const old = i >= 0 ? basic.rows.splice(i, 1)[0][1] : '';
+    blocks.splice(basic ? blocks.indexOf(basic) + 1 : from + 1, 0, { head: REL_HEAD }, { text: REL_HINT }, { cols: REL_COLS, rows: [['', old]] });
+    changed = true;
+  }
+  return changed ? formatDoc(blocks) : text;
+}
+
+// 관계도: 카드마다 점 하나, 관계 표 한 줄마다 화살표 하나. 상대가 카드에 없으면 카드 밖 점(key "?이름")으로.
+export function castRelations(blocks) {
+  const cards = castCards(blocks).map((c, k) => ({ ...c, key: String(k), card: k }));
+  const find = (who) => cards.find((c) => [c.name, c.title].includes(who))
+    ?? cards.find((c) => c.title.startsWith(who) || (c.name && who.startsWith(c.name)));
+  const nodes = [...cards], edges = [];
+  for (const c of cards) {
+    const [from, to] = cardRange(blocks, c.card);
+    const card = blocks.slice(from, to);
+    const at = card.findIndex((b) => b.head === REL_HEAD);
+    const table = at < 0 ? null : card.slice(at).find((b) => b.cols?.[0] === REL_COLS[0]);
+    for (const [who = '', what = ''] of table?.rows ?? []) {
+      const name = who.trim();
+      if (!name) continue;
+      let n = find(name) ?? nodes.find((x) => x.key === `?${name}`);
+      if (!n) nodes.push(n = { key: `?${name}`, title: name, name, role: '', card: null });
+      if (n !== c) edges.push({ from: c.key, to: n.key, label: what.trim() });
+    }
+  }
+  return { nodes, edges };
 }
 
 // 예전 작품 설정의 "인물 카드" 칸을 떼어 낸다. 뒤 칸 번호는 하나씩 당긴다. 칸이 없으면 null.

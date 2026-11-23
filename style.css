@@ -246,3 +246,26 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .form .del button:hover { color: var(--dot); }
 .form .add { justify-self: start; padding: 0; }
 .panel input[type="url"] { width: 100%; padding: 10px 12px; border: 1px solid var(--edge); border-radius: 8px; background: var(--wall); color: var(--ink); font: .9rem var(--sign); }
+
+/* 관계도: 원고 종이 위에 그린 인물 지도 */
+.rel-map { max-width: 60rem; margin: 0; padding: 24px 24px 18px; background: var(--sheet); border-radius: 2px; box-shadow: var(--hang); }
+.rel-map svg { display: block; width: 100%; height: auto; max-height: 80vh; }
+.rel-map figcaption { margin-top: 10px; font-size: .8rem; }
+.rel-edge { fill: none; stroke: var(--caption); stroke-width: 1.3; }
+.rel-tip { fill: var(--caption); }
+.rel-label { font: 500 15px var(--sign); fill: var(--ink); text-anchor: middle; paint-order: stroke; stroke: var(--sheet); stroke-width: 6px; stroke-linejoin: round; }
+.rel-node circle { fill: var(--plaque); stroke: var(--ink); stroke-width: 1.3; transition: stroke-width .12s; }
+.rel-node.center circle { fill: var(--ink); }
+.rel-node.outside circle { stroke: var(--caption); stroke-dasharray: 4 3; }
+.rel-initial { font: 400 24px var(--text); fill: var(--ink); text-anchor: middle; dominant-baseline: central; }
+.rel-node.center .rel-initial { fill: var(--sheet); font-size: 20px; }
+.rel-node.outside .rel-initial, .rel-node.outside .rel-name { fill: var(--caption); }
+.rel-name { font: 400 19px var(--text); fill: var(--ink); text-anchor: middle; paint-order: stroke; stroke: var(--sheet); stroke-width: 6px; stroke-linejoin: round; }
+.rel-role { font: 14px var(--sign); fill: var(--caption); text-anchor: middle; paint-order: stroke; stroke: var(--sheet); stroke-width: 5px; stroke-linejoin: round; }
+.rel-map a:hover circle, .rel-map a:focus-visible circle { stroke-width: 2.6; }
+.rel-map a:focus-visible { outline: none; }
+.rel-list { max-width: 60rem; margin: 24px 0 0; padding: 0; list-style: none; columns: 2 18rem; column-gap: 32px; font-size: .9rem; }
+.rel-list li { break-inside: avoid; padding: 7px 0; border-bottom: 1px solid var(--edge); }
+.rel-list b { font: 400 1rem var(--text); }
+.rel-list span { color: var(--caption); }
+@media (max-width: 639px) { .rel-map { padding: 8px 4px 14px; } .rel-map figcaption { padding: 0 12px; } }

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
-  episodeNoteName, parseNoteName, episodeTemplate, WORK_TEMPLATE, addSeedScene, castTemplate, CAST_CARD, takeCast, castBrief, cardRange, castCards, parseDoc, formatDoc, tidyNote, pastNotes, summaryPrompt, summaryUpto, tableCells, isConflictCopy, exportText, countText, assist, diff, extractRevision, buildPrompt, isConflict, escapeQuery, sanitizeTitle,
+  episodeNoteName, parseNoteName, episodeTemplate, WORK_TEMPLATE, addSeedScene, castTemplate, CAST_CARD, takeCast, castBrief, cardRange, castCards, addRelations, castRelations, parseDoc, formatDoc, tidyNote, pastNotes, summaryPrompt, summaryUpto, tableCells, isConflictCopy, exportText, countText, assist, diff, extractRevision, buildPrompt, isConflict, escapeQuery, sanitizeTitle,
 } from '../logic.js';
 
 test('회차 파일 이름', () => {
@@ -275,4 +275,23 @@ test('인물 카드 목록과 한 카드의 범위', () => {
   assert.ok(blocks.slice(from, to).every((b, i) => i === 0 || !/^##\s/.test(b.head ?? '')));
   assert.deepEqual(cardRange(blocks, 2), [0, 0]);
   assert.deepEqual(castCards(parseDoc('# 인물 설정\n\n안내\n')), []);
+});
+
+test('인물 관계: 예전 카드 옮기기와 관계도', () => {
+  const old = '# 인물 설정\n\n## 서윤 - 주인공\n\n### 기본\n\n| 항목 | 내용 |\n|---|---|\n| 이름 | 서윤 |\n| 다른 인물과의 관계 | 닉스와 소꿉친구 |\n\n### 생김새\n\n| 항목 | 내용 |\n|---|---|\n| 키 / 체격 | 172cm |\n\n## 닉스\n\n### 기본\n\n| 항목 | 내용 |\n|---|---|\n| 이름 | 닉스 |\n';
+  const up = addRelations(old);
+  assert.match(up, /\| 이름 \| 서윤 \|\n\n### 다른 인물과의 관계\n\n[^\n]+\n\n\| 상대 \| 관계 \|\n\|---\|---\|\n\|  \| 닉스와 소꿉친구 \|\n\n### 생김새/);
+  assert.doesNotMatch(up, /\| 다른 인물과의 관계 \|/);
+  assert.equal(addRelations(up), up); // 두 번 해도 그대로
+  assert.equal(addRelations('# 인물 설정\n\n안내\n'), '# 인물 설정\n\n안내\n');
+
+  const filled = up.replace('|  | 닉스와 소꿉친구 |', '| 닉스 | 소꿉친구 |\n| 민호 | 라이벌 |\n| 서윤 | 자기 자신 |')
+    .replace(/(## 닉스[\s\S]*\| 이름 \| 닉스 \|\n)/, '$1\n### 다른 인물과의 관계\n\n| 상대 | 관계 |\n|---|---|\n| 서윤 - 주인공 | 짝사랑 |\n');
+  const { nodes, edges } = castRelations(parseDoc(filled));
+  assert.deepEqual(nodes.map((n) => [n.key, n.title, n.card]), [['0', '서윤 - 주인공', 0], ['1', '닉스', 1], ['?민호', '민호', null]]);
+  assert.deepEqual(edges, [
+    { from: '0', to: '1', label: '소꿉친구' },
+    { from: '0', to: '?민호', label: '라이벌' },
+    { from: '1', to: '0', label: '짝사랑' },
+  ]);
 });
