@@ -139,6 +139,21 @@ export function castCards(blocks) {
   }
 }
 
+// 인물 사진: 카드 제목 바로 아래 "사진: 드라이브 파일 id" 한 줄. 사진 자체는 작품 폴더의 그림 파일.
+const PHOTO = /^사진: (\S+)$/;
+export const isPhotoLine = (t = '') => PHOTO.test(t);
+export function cardPhoto(blocks, k) {
+  const [from, to] = cardRange(blocks, k);
+  return blocks.slice(from, to).map((b) => PHOTO.exec(b.text ?? '')?.[1]).find(Boolean) ?? null;
+}
+export function setCardPhoto(text, k, id) {
+  const blocks = parseDoc(text), [from, to] = cardRange(blocks, k);
+  if (from === to) return text;
+  const rest = blocks.slice(from + 1, to).filter((b) => !isPhotoLine(b.text));
+  blocks.splice(from + 1, to - from - 1, ...(id ? [{ text: `사진: ${id}` }] : []), ...rest);
+  return formatDoc(blocks);
+}
+
 // 관계 표가 없는 예전 카드에 끼워 넣는다. 기본 표의 "다른 인물과의 관계" 줄은 빼서 관계 칸으로 옮긴다.
 export function addRelations(text) {
   const blocks = parseDoc(text);

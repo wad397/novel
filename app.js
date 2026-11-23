@@ -1,7 +1,7 @@
 import * as drive from './drive.js';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
-  episodeNoteName, parseNoteName, WORK_TEMPLATE, addSeedScene, castTemplate, CAST_CARD, takeCast, cardRange, castCards, addRelations, castRelations, episodeTemplate, parseDoc, formatDoc, tidyNote, pastNotes, summaryPrompt,
+  episodeNoteName, parseNoteName, WORK_TEMPLATE, addSeedScene, castTemplate, CAST_CARD, takeCast, cardRange, castCards, addRelations, castRelations, cardPhoto, setCardPhoto, isPhotoLine, episodeTemplate, parseDoc, formatDoc, tidyNote, pastNotes, summaryPrompt,
   countText, assist, diff, extractRevision, buildPrompt, isConflict, sanitizeTitle, isConflictCopy, exportText,
 } from './logic.js';
 
@@ -371,6 +371,7 @@ async function showEditor(folderId, fileId, card = null) {
         <div class="plaque">
           ${card === null ? `<a href="#/n/${folderId}" class="place">${esc(folder.name)}</a>` : `<a href="#/p/${folderId}/${fileId}" class="place">${esc(folder.name)} · 인물 설정</a>`}
           <h1 id="title"></h1>
+          ${card === null ? '' : '<figure class="portrait empty" id="portrait"><button type="button" class="frame" id="photo-pick" aria-label="사진 넣기"><img alt="" hidden><span>사진 넣기</span></button><figcaption><button type="button" class="link" id="photo-change" hidden>사진 바꾸기</button><button type="button" class="link danger" id="photo-del" hidden>사진 빼기</button></figcaption><input type="file" accept="image/*" id="photo-file" hidden></figure>'}
           <p class="status" id="status"></p>
           <p class="tools">${isEpisode ? '<button id="rename" class="link">제목 바꾸기</button><button id="delete" class="link">휴지통으로</button>' + EXPORT_BUTTONS : isConflictCopy(meta.name) ? '<button id="delete" class="link">휴지통으로</button>' : ''}${card !== null ? `<a class="link" href="#/r/${folderId}/${fileId}/${card}">관계도 보기</a><button id="del-card" class="link danger">이 인물 지우기</button>` : isForm ? '<button id="raw" class="link">글자로 고치기</button>' : ''}<button class="link open-settings">설정</button></p>
           ${meta.name === SUMMARY ? '<p class="ai-tools"><button type="button" id="ask-summary">Claude에게 요약 부탁 복사</button></p><p class="quiet" id="summary-msg" aria-live="polite">새 화가 쌓이면 다시 눌러 주세요. 요약 안 된 화만 더해서 부탁해요.</p>' : ''}
@@ -449,9 +450,12 @@ async function showEditor(folderId, fileId, card = null) {
     title.textContent = cardTitle;
     document.title = `${cardTitle} - 집필`;
     $app.querySelector('#form').addEventListener('input', (e) => { if (e.target.dataset.h !== undefined) title.textContent = e.target.value; });
+    setupPortrait(folderId, card, title);
     $app.querySelector('#del-card').onclick = async () => {
       const blocks = parseDoc(ta.value), [from, to] = cardRange(blocks, card);
       if (from === to || !confirm(`"${title.textContent}" 카드를 지울까요?\n바뀌기 전 내용은 드라이브 버전 기록에 남아요.`)) return;
+      const photo = cardPhoto(blocks, card);
+      if (photo) drive.trash(photo).catch(() => {});
       blocks.splice(from, to - from);
       ta.value = formatDoc(blocks);
       ta.dispatchEvent(new Event('input'));
@@ -474,6 +478,63 @@ async function showEditor(folderId, fileId, card = null) {
   };
   $app.querySelector('#rename')?.addEventListener('click', renameEpisode);
   $app.querySelector('#delete')?.addEventListener('click', deleteEpisode);
+}
+
+// 인물 카드 사진. 올릴 때 긴 변 1200px JPEG로 줄여서 작품 폴더에 넣고, 카드에는 파일 id만 적는다.
+function setupPortrait(folderId, card, title) {
+  const ta = editing.ta, box = $app.querySelector('#portrait'), img = box.querySelector('img'), file = box.querySelector('#photo-file');
+  const pick = box.querySelector('#photo-pick'), change = box.querySelector('#photo-change'), del = box.querySelector('#photo-del'), label = pick.querySelector('span');
+  let shown, url;
+  const current = () => cardPhoto(parseDoc(ta.value), card);
+  const show = async (id) => {
+    if (id === shown) return;
+    shown = id;
+    if (url) URL.revokeObjectURL(url);
+    url = null; img.hidden = true;
+    box.classList.toggle('empty', !id);
+    change.hidden = del.hidden = !id;
+    label.textContent = id ? '불러오는 중…' : '사진 넣기';
+    if (!id) return;
+    try {
+      const u = URL.createObjectURL(await drive.readBlob(id));
+      if (shown !== id) return URL.revokeObjectURL(u);
+      url = img.src = u; img.hidden = false;
+    } catch (e) { if (e.status === 401) needLogin(); label.textContent = '사진을 불러오지 못했어요'; }
+  };
+  const set = (id) => { ta.value = setCardPhoto(ta.value, card, id); ta.dispatchEvent(new Event('input')); show(id); };
+  pick.onclick = () => { if (!current()) file.click(); };
+  change.onclick = () => file.click();
+  file.onchange = async () => {
+    const f = file.files[0];
+    file.value = '';
+    if (!f) return;
+    const old = current();
+    label.textContent = '올리는 중…'; box.classList.add('empty'); img.hidden = true; shown = undefined;
+    try {
+      const up = await drive.createFile(`인물 사진 - ${title.textContent}.jpg`, folderId, await shrink(f));
+      set(up.id);
+      if (old) drive.trash(old).catch(() => {}); // 예전 사진은 드라이브 휴지통으로
+    } catch (e) { e.status === 401 ? needLogin() : alert(`사진을 올리지 못했어요. ${e.message}`); show(old); }
+  };
+  del.onclick = () => {
+    const old = current();
+    if (!old || !confirm('이 사진을 뺄까요? 사진 파일은 드라이브 휴지통으로 가요.')) return;
+    set(null);
+    drive.trash(old).catch(() => {});
+  };
+  ta.addEventListener('input', () => show(current())); // 수정본 반영으로 사진 줄이 바뀐 경우
+  show(current());
+}
+
+async function shrink(file, max = 1200) {
+  const bmp = await createImageBitmap(file).catch(() => { throw new Error('그림 파일이 아니거나 열 수 없는 형식이에요.'); });
+  const s = Math.min(1, max / Math.max(bmp.width, bmp.height));
+  const c = Object.assign(document.createElement('canvas'), { width: Math.round(bmp.width * s), height: Math.round(bmp.height * s) });
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff'; // 투명한 PNG가 까맣게 되지 않게
+  g.fillRect(0, 0, c.width, c.height);
+  g.drawImage(bmp, 0, 0, c.width, c.height);
+  return new Promise((ok) => c.toBlob(ok, 'image/jpeg', 0.88));
 }
 
 // 설정 메모를 설명 카드용으로. "# 제목"은 소제목, 표는 항목·내용 짝으로 그린다.
@@ -516,6 +577,7 @@ function setupForm(ta, box, titles = false, card = null) {
       if (b.head && titles && /^##\s/.test(b.head)) return `<input class="card-title" data-b="${i}" data-h value="${esc(b.head.replace(/^##\s*/, ''))}" aria-label="카드 제목" placeholder="카드 제목 (예: 서윤 - 주인공)">`;
       if (b.head) return /^#\s/.test(b.head) ? `<h1>${esc(b.head.replace(/^#\s*/, ''))}</h1>` : `<h2>${esc(b.head.replace(/^#+\s*/, ''))}</h2>`;
       if (b.text !== undefined) {
+        if (isPhotoLine(b.text)) return ''; // 사진은 설명판에서 보여 준다
         return /^\s*(-(\s|$)|[-•·]\S|[•·*]\s)/m.test(b.text)
           ? `<textarea class="free" rows="2" data-b="${i}" aria-label="내용">${esc(b.text)}</textarea>`
           : `<p class="hint">${b.text.split('\n').map(esc).join('<br>')}</p>`;

@@ -295,3 +295,18 @@ test('인물 관계: 예전 카드 옮기기와 관계도', () => {
     { from: '1', to: '0', label: '짝사랑' },
   ]);
 });
+
+test('인물 사진 줄 넣기·바꾸기·빼기', async () => {
+  const { castTemplate, parseDoc, cardPhoto, setCardPhoto, castBrief, castCards } = await import('../logic.js');
+  const t0 = castTemplate([{ '이름': '서윤' }, { '이름': '닉스' }]);
+  assert.equal(cardPhoto(parseDoc(t0), 1), null);
+  const t1 = setCardPhoto(t0, 1, 'abc');
+  assert.equal(cardPhoto(parseDoc(t1), 1), 'abc');
+  assert.equal(cardPhoto(parseDoc(t1), 0), null);
+  const t2 = setCardPhoto(t1, 1, 'xyz');
+  assert.equal((t2.match(/사진: /g) || []).length, 1);
+  assert.equal(cardPhoto(parseDoc(t2), 1), 'xyz');
+  assert.ok(!castBrief(t2).includes('사진:')); // Claude에게는 안 보낸다
+  assert.deepEqual(castCards(parseDoc(t2)).map((c) => c.title), ['서윤', '닉스']);
+  assert.equal(setCardPhoto(t2, 1, null), t0);
+});

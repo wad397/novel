@@ -47,12 +47,16 @@ export const readText = (id) => call(`${API}/${id}?alt=media`).then((r) => r.tex
 
 export const getMeta = (id) => json(`${API}/${id}?fields=${FIELDS}`);
 
-export function createText(name, parentId, text) {
+export function createFile(name, parentId, blob) {
   const form = new FormData();
-  form.append('metadata', new Blob([JSON.stringify({ name, parents: [parentId], mimeType: 'text/markdown' })], { type: 'application/json' }));
-  form.append('file', new Blob([text], { type: 'text/markdown;charset=UTF-8' }));
+  form.append('metadata', new Blob([JSON.stringify({ name, parents: [parentId], mimeType: blob.type.split(';')[0] })], { type: 'application/json' }));
+  form.append('file', blob);
   return json(`${UPLOAD}?uploadType=multipart&fields=${FIELDS}`, { method: 'POST', body: form });
 }
+
+export const createText = (name, parentId, text) => createFile(name, parentId, new Blob([text], { type: 'text/markdown;charset=UTF-8' }));
+
+export const readBlob = (id) => call(`${API}/${id}?alt=media`).then((r) => r.blob());
 
 export const updateText = (id, text) =>
   json(`${UPLOAD}/${id}?uploadType=media&fields=${FIELDS}`, {

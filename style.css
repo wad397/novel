@@ -269,3 +269,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .rel-list b { font: 400 1rem var(--text); }
 .rel-list span { color: var(--caption); }
 @media (max-width: 639px) { .rel-map { padding: 8px 4px 14px; } .rel-map figcaption { padding: 0 12px; } }
+
+/* 인물 카드 사진: 설명판 안의 작은 액자 */
+.portrait { margin: 12px 0 6px; }
+.portrait .frame { display: block; width: 100%; aspect-ratio: 3 / 4; padding: 6px; border: 1px solid var(--edge); border-radius: 3px; background: var(--sheet); box-shadow: inset 0 0 0 1px var(--soft); cursor: default; overflow: hidden; }
+.portrait .frame img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: 1px; }
+.portrait .frame span { display: grid; place-items: center; height: 100%; color: var(--caption); font: 500 .82rem/1.4 var(--sign); border: 1px dashed var(--edge); border-radius: 1px; }
+.portrait .frame img:not([hidden]) + span { display: none; }
+.portrait.empty .frame { cursor: pointer; }
+.portrait.empty .frame:hover span { color: var(--ink); border-color: var(--caption); }
+.portrait figcaption { display: flex; gap: 14px; }
+.portrait figcaption:has(> :not([hidden])) { margin-top: 4px; }
+@media (max-width: 639px) { .portrait { max-width: 11rem; } }
