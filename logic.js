@@ -63,19 +63,11 @@ export const WORK_TEMPLATE = `# 작품 설정
 | 피하고 싶은 것 |  |
 
 ${SEED_BLOCK}
-## 3. 인물 카드
-
-이름이나 외모보다 말버릇과 고집이 더 중요해요.
-
-| 이름 | 역할 | 원하는 것 | 말버릇 / 말투 | 절대 안 하는 행동 | 직업 | 특이점 |
-|---|---|---|---|---|---|---|
-|  |  |  |  |  |  |  |
-
-## 4. 꼭 지켜야 할 설정
+## 3. 꼭 지켜야 할 설정
 
 -
 
-## 5. 앞으로의 끝 장면 메모
+## 4. 앞으로의 끝 장면 메모
 
 마지막 장면만 미리 정해 두면 그 화는 거기로 가기만 하면 돼요.
 
@@ -85,10 +77,76 @@ ${SEED_BLOCK}
 | 2 |  |
 | 3 |  |
 
-## 6. 받은 원고 피드백
+## 5. 받은 원고 피드백
 
 -
 `;
+
+// 인물 설정(인물.md): 인물마다 카드 하나. 카드 안 표의 이름표를 예전 인물 카드 표의 칸 이름과 맞춰 둬서 옮길 때 그대로 채운다.
+const CAST_PARTS = [
+  ['기본', ['이름', '역할', '나이 / 학년·직업', '성별', '원하는 것', '두려워하는 것 / 약점', '다른 인물과의 관계']],
+  ['생김새 (이것만 보고 그림을 그릴 수 있게)', ['키 / 체격', '얼굴형 / 피부', '눈 (모양·색·인상)', '눈썹·코·입', '머리 (색·길이·모양)', '평소 옷차림', '자주 짓는 표정 / 자세', '첫인상 한 줄']],
+  ['몸 특이사항', ['흉터·점·문신 (위치까지)', '안경·손잡이·시력', '건강·장애·체질', '목소리', '몸에 밴 버릇']],
+  ['성격과 말투', ['성격 한 줄', '말버릇 / 말투', '예시 대사', '절대 안 하는 행동', '특이점']],
+  ['아는 것과 모르는 것', ['관심 분야와 수준', '잘 아는 것', '모르는 것 / 틀리게 아는 것', '아는 걸 쓰는 버릇']],
+];
+const CAST_ALIAS = { '나이 / 학년·직업': '직업' }; // 예전 칸 이름
+const castCard = (p = {}) => `## 인물
+
+${CAST_PARTS.map(([part, rows]) => `### ${part}
+
+| 항목 | 내용 |
+|---|---|
+${rows.map((r) => `| ${r} | ${(p[r] ?? p[CAST_ALIAS[r]] ?? '').trim()} |`).join('\n')}
+`).join('\n')}
+### 이야기 중에 새로 알게 된 것·바뀐 것
+
+"23화: 상담 선생님에게 '투사'를 배움", "40화: 왼손에 화상"처럼 화와 함께 적어요.
+
+-
+`;
+const CAST_HEAD = `# 인물 설정
+
+인물마다 카드 하나예요. 생김새와 몸 특이사항은 그림을 그릴 수 있을 만큼 자세히 적을수록 좋아요. 빈칸은 비워 둬도 돼요.
+
+`;
+export const CAST_CARD = castCard();
+export const castTemplate = (people = []) => CAST_HEAD + (people.length ? people : [{}]).map(castCard).join('\n');
+
+// 예전 작품 설정의 "인물 카드" 칸을 떼어 낸다. 뒤 칸 번호는 하나씩 당긴다. 칸이 없으면 null.
+export function takeCast(memo) {
+  const m = /^## \d+\. 인물 카드[^\n]*\n[\s\S]*?(?=^## |(?![\s\S]))/m.exec(memo);
+  if (!m) return null;
+  const table = parseDoc(m[0]).find((b) => b.cols);
+  const people = (table?.rows ?? []).filter((r) => r.some(Boolean)).map((r) => Object.fromEntries(table.cols.map((c, k) => [c, r[k]])));
+  const rest = memo.slice(m.index + m[0].length).replace(/^## (\d+)\. /gm, (_, n) => `## ${n - 1}. `);
+  return { memo: memo.slice(0, m.index) + rest, people };
+}
+
+// Claude에게 보낼 인물 설정: 빈칸, 안내 글, 내용 없는 제목은 뺀다
+export function castBrief(text) {
+  const out = [];
+  for (const b of parseDoc(text)) {
+    if (b.head) out.push(b);
+    else if (b.text !== undefined) {
+      const t = b.text.split('\n').filter((l) => /^\s*-\s*\S/.test(l)).join('\n');
+      if (t) out.push({ text: t });
+    } else {
+      const rows = b.rows.filter((r) => (b.cols[0] === '항목' ? r.slice(1) : r).some(Boolean));
+      if (rows.length) out.push({ ...b, rows });
+    }
+  }
+  const level = (h) => /^#+/.exec(h)[0].length;
+  const kept = out.filter((b, i) => {
+    if (!b.head) return true;
+    for (const n of out.slice(i + 1)) {
+      if (!n.head) return true;
+      if (level(n.head) <= level(b.head)) return false;
+    }
+    return false;
+  });
+  return kept.length ? formatDoc(kept).trim() : '';
+}
 
 export const episodeTemplate = (num) => `# ${num}화 설정
 
@@ -297,12 +355,14 @@ export function summaryPrompt({ work, memo, summary = '', notes, recent = 10 }) 
 }
 
 // Claude에게 보낼 질문 한 덩어리
-export function buildPrompt({ concept, request, extra, work, episode, memo, past = '', note = '', text }) {
+export function buildPrompt({ concept, request, extra, work, episode, memo, cast = '', past = '', note = '', text }) {
+  const people = castBrief(cast);
   return [
     concept.trim() && `[너의 역할]\n${concept.trim()}`,
     `[요청]\n${[request, extra.trim()].filter(Boolean).join('\n')}`,
     `[작품] ${work}\n[회차] ${episode}`,
     `[설정 메모]\n${memo.trim() || '(없음)'}`,
+    people && `[인물 설정]\n${people}`,
     past.trim() && `[지난 화 설정]\n${past.trim()}`,
     note.trim() && `[이번 화 설정]\n${note.trim()}`,
     `[본문]\n${text}`,
@@ -311,7 +371,10 @@ export function buildPrompt({ concept, request, extra, work, episode, memo, past
         + `그때가 오기 전에는 그 장면을 미리 쓰거나 당겨 오지 말고, 그 장면에 힘이 실리도록 '그 전에 깔아 둘 것'을 조금씩 심어줘. `
         + `'나오는 때'가 비어 있으면 이야기 흐름에 자연스럽게 맞는 화에 넣되, 억지로 끼우거나 한 화에 여러 개를 몰아넣지 마. `
         + `'12화에 씀'처럼 이미 쓴 장면은 다시 쓰지 마. 목록의 장면이 나오는 화라면 그 장면을 가장 공들여 쓰고, 코드 블록 밖에 어떤 장면을 썼는지 짧게 알려줘.\n` : '')
-      + '- 요청한 내용이 설정 메모나 지난 화 설정과 어긋나면, 답 맨 앞에 어느 설정과 어떻게 부딪히는지 먼저 짧게 알려줘. 원고는 이미 정해진 설정을 따라.\n'
+      + (people ? "- [인물 설정]의 생김새, 몸 특이사항, 말투를 그대로 지켜줘. 인물은 '아는 것과 모르는 것', '이야기 중에 새로 알게 된 것·바뀐 것' 안에서만 말하고 판단해. "
+        + '모른다고 적힌 건 아는 척하지 말고, 안다고 적힌 건 모르는 척하지 마. 적혀 있지 않은 지식은 그 나이, 직업, 관심 수준에서 자연스러운 만큼만 써. '
+        + "이번 화에서 인물이 새로 알게 된 것이나 바뀐 생김새(상처, 머리 모양 등)가 있으면 코드 블록 밖에 '인물 설정에 더할 것'으로 짧게 알려줘.\n" : '')
+      + '- 요청한 내용이 설정 메모, 인물 설정, 지난 화 설정과 어긋나면, 답 맨 앞에 어느 설정과 어떻게 부딪히는지 먼저 짧게 알려줘. 원고는 이미 정해진 설정을 따라.\n'
       + '- 원고를 고쳐 달라는 요청이면 설명은 짧게 하고, 고친 회차 전체를 ```수정본 으로 시작하는 코드 블록 하나에 담아줘. 고치지 않은 문장도 빠짐없이 그대로 넣어줘.\n'
       + '- 이어 쓸 장면을 부탁하면 새로 쓴 부분만 ```이어쓰기 로 시작하는 코드 블록 하나에 담아줘.\n'
       + '- 피드백이나 검토만 부탁하면 코드 블록 없이 답해줘.',

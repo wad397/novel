@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
-  episodeNoteName, parseNoteName, episodeTemplate, WORK_TEMPLATE, addSeedScene, parseDoc, formatDoc, tidyNote, pastNotes, summaryPrompt, summaryUpto, tableCells, isConflictCopy, exportText, countText, assist, diff, extractRevision, buildPrompt, isConflict, escapeQuery, sanitizeTitle,
+  episodeNoteName, parseNoteName, episodeTemplate, WORK_TEMPLATE, addSeedScene, castTemplate, CAST_CARD, takeCast, castBrief, parseDoc, formatDoc, tidyNote, pastNotes, summaryPrompt, summaryUpto, tableCells, isConflictCopy, exportText, countText, assist, diff, extractRevision, buildPrompt, isConflict, escapeQuery, sanitizeTitle,
 } from '../logic.js';
 
 test('회차 파일 이름', () => {
@@ -217,7 +217,7 @@ test('뒤 화까지 들어간 요약은 앞 화를 고칠 때 쓰지 않는다',
 });
 
 test('처음 떠올린 장면 칸', () => {
-  assert.match(WORK_TEMPLATE, /## 2\. 떠올린 장면·에피소드[\s\S]*## 3\. 인물 카드[\s\S]*## 6\. 받은 원고 피드백/);
+  assert.match(WORK_TEMPLATE, /## 2\. 떠올린 장면·에피소드[\s\S]*## 3\. 꼭 지켜야 할 설정[\s\S]*## 5\. 받은 원고 피드백/);
   assert.equal(addSeedScene(WORK_TEMPLATE), WORK_TEMPLATE); // 이미 있으면 그대로
   // 예전 양식: 1~5번 → 장면 칸이 2번으로 들어가고 뒤가 하나씩 밀린다. 적어 둔 내용은 그대로.
   const old = '# 작품 설정\n\n## 1. 작품 기본 정보\n\n| 항목 | 내용 |\n|---|---|\n| 가제 | 용사 |\n\n## 2. 인물 카드\n\n| 이름 | 역할 |\n|---|---|\n| 닉스 | 친구 |\n\n## 3. 꼭 지켜야 할 설정\n\n-프리나는 회귀함\n';
@@ -236,4 +236,32 @@ test('앞서 넣은 "처음 떠올린 장면" 칸은 이름만 바뀌고 적은 
   assert.match(after, /## 2\. 떠올린 장면·에피소드\n\n떠오른 장면이나 에피소드를 생각날 때마다[^\n]*\n\n\| 장면 \| 나오는 때 \(처음 \/ 중간 \/ 결말 \/ N화쯤, 비워도 돼요\) \| 그 전에 깔아 둘 것 \|\n\|---\|---\|---\|\n\| 재회 \| 결말 \|  \|\n\n## 3\. 인물 카드\n$/);
   assert.equal(addSeedScene(after), after);
   assert.match(buildPrompt({ concept: '', request: 'r', extra: '', work: 'w', episode: 'e', memo: after, text: 't' }), /'12화에 씀'처럼 이미 쓴 장면은 다시 쓰지 마/);
+});
+
+test('인물 설정: 양식, 예전 인물 카드 옮기기, Claude에게 보낼 글', () => {
+  assert.doesNotMatch(WORK_TEMPLATE, /인물 카드/);
+  const t = castTemplate();
+  assert.equal(formatDoc(parseDoc(t)), t); // 칸 화면에서 고쳐도 모양이 그대로
+  assert.match(t, /### 생김새[\s\S]*\| 눈 \(모양·색·인상\) \|[\s\S]*### 몸 특이사항[\s\S]*### 아는 것과 모르는 것[\s\S]*\| 모르는 것 \/ 틀리게 아는 것 \|[\s\S]*### 이야기 중에 새로 알게 된 것·바뀐 것/);
+  assert.ok(t.endsWith(CAST_CARD));
+
+  const memo = '# 작품 설정\n\n## 1. 작품 기본 정보\n\n| 항목 | 내용 |\n|---|---|\n| 가제 | 용사 |\n\n## 2. 인물 카드\n\n안내\n\n| 이름 | 역할 | 직업 | 특이점 |\n|---|---|---|---|\n| 닉스 | 친구 | 대장장이 | 왼손잡이 |\n|  |  |  |  |\n\n## 3. 꼭 지켜야 할 설정\n\n- 회귀함\n';
+  const { memo: rest, people } = takeCast(memo);
+  assert.equal(rest, '# 작품 설정\n\n## 1. 작품 기본 정보\n\n| 항목 | 내용 |\n|---|---|\n| 가제 | 용사 |\n\n## 2. 꼭 지켜야 할 설정\n\n- 회귀함\n');
+  assert.equal(people.length, 1);
+  const moved = castTemplate(people);
+  assert.match(moved, /\| 이름 \| 닉스 \|\n\| 역할 \| 친구 \|\n\| 나이 \/ 학년·직업 \| 대장장이 \|/);
+  assert.match(moved, /\| 특이점 \| 왼손잡이 \|/);
+  assert.equal(takeCast('# 메모\n\n## 1. 끝\n'), null);
+  assert.match(takeCast('## 4. 인물 카드\n\n| 이름 |\n|---|\n| 아 |\n').memo, /^$/);
+
+  // 빈칸·안내·빈 제목은 빼고 보낸다
+  const brief = castBrief(moved);
+  assert.match(brief, /^# 인물 설정\n\n## 인물\n\n### 기본\n\n\| 항목 \| 내용 \|\n\|---\|---\|\n\| 이름 \| 닉스 \|\n\| 역할 \| 친구 \|\n\| 나이 \/ 학년·직업 \| 대장장이 \|\n\n### 성격과 말투/);
+  assert.doesNotMatch(brief, /생김새|성별|인물마다 카드|23화/);
+  assert.equal(castBrief(castTemplate()), '');
+
+  const ask = (cast) => buildPrompt({ concept: '', request: 'r', extra: '', work: 'w', episode: 'e', memo: 'm', cast, text: 't' });
+  assert.match(ask(moved), /\[설정 메모\]\nm\n\n\[인물 설정\]\n# 인물 설정[\s\S]*모른다고 적힌 건 아는 척하지 말고/);
+  assert.doesNotMatch(ask(castTemplate()), /인물 설정\]|아는 척/);
 });

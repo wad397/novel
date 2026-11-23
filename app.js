@@ -1,7 +1,7 @@
 import * as drive from './drive.js';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
-  episodeNoteName, parseNoteName, WORK_TEMPLATE, addSeedScene, episodeTemplate, parseDoc, formatDoc, tidyNote, pastNotes, summaryPrompt,
+  episodeNoteName, parseNoteName, WORK_TEMPLATE, addSeedScene, castTemplate, CAST_CARD, takeCast, episodeTemplate, parseDoc, formatDoc, tidyNote, pastNotes, summaryPrompt,
   countText, assist, diff, extractRevision, buildPrompt, isConflict, sanitizeTitle, isConflictCopy, exportText,
 } from './logic.js';
 
@@ -11,6 +11,7 @@ const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const ROOT_NAME = '내소설';
 const SETTINGS = '설정.md';
 const SUMMARY = '요약.md';
+const CAST = '인물.md';
 const SAVE_DELAY = 2000;
 const UNITS = { chars: ['글자 수', '자'], words: ['단어 수', '단어'], sentences: ['문장 수', '문장'], bytes: ['용량', '바이트'] };
 const COUNT_KEY = 'count-settings';
@@ -50,7 +51,7 @@ const countSettings = loadSettings(COUNT_KEY, COUNT_DEFAULT);
 const inputSettings = loadSettings(INPUT_KEY, INPUT_DEFAULT);
 const AI_KEY = 'ai-settings';
 const aiSettings = loadSettings(AI_KEY, { concept: '', project: '' });
-const displayName = (name) => (name === SETTINGS ? '설정 메모' : name === SUMMARY ? '오래된 화 요약' :parseNoteName(name) ? `${parseNoteName(name)}화 설정` : parseEpisodeName(name)?.title ?? name.replace(/\.md$/, ''));
+const displayName = (name) => (name === SETTINGS ? '설정 메모' : name === SUMMARY ? '오래된 화 요약' : name === CAST ? '인물 설정' : parseNoteName(name) ? `${parseNoteName(name)}화 설정` : parseEpisodeName(name)?.title ?? name.replace(/\.md$/, ''));
 
 // ---------- 로그인 ----------
 // 구글 접근 권한(토큰)은 한 번에 1시간까지만 받을 수 있다. 서버 없이 쓰는 앱이라
@@ -138,7 +139,7 @@ async function showNovels() {
     if (title === null) return;
     try {
       const folder = await drive.createFolder(sanitizeTitle(title), rootId);
-      await drive.createText(SETTINGS, folder.id, WORK_TEMPLATE);
+      await Promise.all([drive.createText(SETTINGS, folder.id, WORK_TEMPLATE), drive.createText(CAST, folder.id, castTemplate())]);
       location.hash = `#/n/${folder.id}`;
     } catch (e) { failed(e, showNovels); }
   };
@@ -150,8 +151,9 @@ async function showNovel(folderId) {
   const md = files.filter((f) => f.name.endsWith('.md'));
   const settings = md.find((f) => f.name === SETTINGS);
   const summaryFile = md.find((f) => f.name === SUMMARY);
+  const castFile = md.find((f) => f.name === CAST);
   const copies = md.filter((f) => isConflictCopy(f.name));
-  const episodes = md.filter((f) => f !== settings && f !== summaryFile && !parseNoteName(f.name)).sort((x, y) =>
+  const episodes = md.filter((f) => f !== settings && f !== summaryFile && f !== castFile && !parseNoteName(f.name)).sort((x, y) =>
     (parseEpisodeName(x.name)?.num ?? Infinity) - (parseEpisodeName(y.name)?.num ?? Infinity) || x.name.replace(/\.md$/, '').localeCompare(y.name.replace(/\.md$/, ''), 'ko'));
   const row = (f) => {
     const ep = parseEpisodeName(f.name);
@@ -159,7 +161,8 @@ async function showNovel(folderId) {
   };
   $app.innerHTML = `
     <header class="page-head"><a href="#/" class="place">작품</a><h1>${esc(folder.name)}</h1><p class="head-tools">${EXPORT_BUTTONS}<button class="link" id="tidy-notes">회차 설정 한 번에 정리</button>${copies.length ? `<button class="link danger" id="trash-copies">충돌 사본 ${copies.length}개 지우기</button>` : ''}<button class="link open-settings">설정</button><button class="link danger" id="delete-work">작품 휴지통으로</button></p></header>
-    ${settings ? `<p class="memo"><a href="#/e/${folderId}/${settings.id}">설정 메모</a> 인물과 세계관을 적어 두는 곳</p>` : ''}
+    ${settings ? `<p class="memo"><a href="#/e/${folderId}/${settings.id}">설정 메모</a> 작품 정보와 세계관을 적어 두는 곳</p>` : ''}
+    <p class="memo"><a href="${castFile ? `#/e/${folderId}/${castFile.id}` : '#'}" id="cast-link">인물 설정</a> 인물마다 생김새, 몸 특이사항, 아는 것까지 자세히</p>
     <p class="memo"><a href="${summaryFile ? `#/e/${folderId}/${summaryFile.id}` : '#'}" id="summary-link">오래된 화 요약</a> 최근 10화보다 앞 화 설정을 Claude가 줄여 둔 것</p>
     <ol class="episodes">${episodes.map(row).join('') || '<li class="empty">아직 회차가 없어요. 첫 회차를 만들어 보세요.</li>'}</ol>
     <button id="add" class="act">새 회차 만들기</button>`;
@@ -173,6 +176,23 @@ async function showNovel(folderId) {
       download(`${folder.name}.${fmt}`, exportText(list.map((f, i) => ({ title: epLabel(f.name), text: texts[i] })), fmt, folder.name));
     } catch (e) { e.status === 401 ? needLogin() : alert(`내보내지 못했어요. ${e.message}`); }
     b.textContent = label;
+  };
+  // 처음 열 때 만든다. 예전 작품 설정의 인물 카드 표가 있으면 카드로 옮기고 작품 설정에서는 뺀다.
+  if (!castFile) $app.querySelector('#cast-link').onclick = async (ev) => {
+    ev.preventDefault();
+    try {
+      const taken = settings ? takeCast(await drive.readText(settings.id)) : null;
+      if (taken && !confirm(`작품 설정의 인물 카드${taken.people.length ? ` (${taken.people.length}명)` : ''}를 새 인물 설정으로 옮길까요?
+옮긴 뒤 작품 설정에서는 인물 카드 칸이 빠져요. 바뀌기 전 내용은 드라이브 버전 기록에 남아요.
+취소하면 빈 인물 설정만 만들어요.`)) {
+        const f = await drive.createText(CAST, folderId, castTemplate());
+        location.hash = `#/e/${folderId}/${f.id}`;
+        return;
+      }
+      const f = await drive.createText(CAST, folderId, castTemplate(taken?.people));
+      if (taken) await drive.updateText(settings.id, taken.memo);
+      location.hash = `#/e/${folderId}/${f.id}`;
+    } catch (e) { e.status === 401 ? needLogin() : alert(`인물 설정을 만들지 못했어요. ${e.message}`); }
   };
   if (!summaryFile) $app.querySelector('#summary-link').onclick = async (ev) => {
     ev.preventDefault();
@@ -237,7 +257,8 @@ async function showEditor(folderId, fileId) {
   const memoFile = siblings.find((f) => f.name === SETTINGS && f.id !== fileId);
   const epNum = parseEpisodeName(meta.name)?.num;
   const noteFile = epNum ? siblings.find((f) => f.name === episodeNoteName(epNum)) : null;
-  const [memo, note] = await Promise.all([memoFile, noteFile].map((f) => (f ? drive.readText(f.id) : null)));
+  const castFile = siblings.find((f) => f.name === CAST && f.id !== fileId);
+  const [memo, note, cast] = await Promise.all([memoFile, noteFile, castFile].map((f) => (f ? drive.readText(f.id) : null)));
   // 비어 있는 작품 설정을 열면 양식을 채워서 보여 준다. 고치기 전에는 저장하지 않는다.
   // 예전 작품 설정에는 "처음 떠올린 장면" 칸을 끼워서 보여 준다. 이것도 고치기 전에는 저장하지 않는다.
   let text = meta.name === SETTINGS ? (remote ? addSeedScene(remote) : WORK_TEMPLATE) : remote, dirty = false;
@@ -249,7 +270,7 @@ async function showEditor(folderId, fileId) {
   } else store.del(fileId);
 
   const isEpisode = !!epNum;
-  const isForm = meta.name === SETTINGS || !!parseNoteName(meta.name);
+  const isForm = meta.name === SETTINGS || meta.name === CAST || !!parseNoteName(meta.name);
   const memoPart = memoFile ? `<p class="memo-head"><span>${isEpisode ? '작품 설정' : '설정 메모'}</span><a href="#/e/${folderId}/${memoFile.id}">고치기</a></p>${memoHtml(memo)}` : '';
   const notePart = !isEpisode ? '' : `<p class="memo-head"><span>이번 화 설정</span>${noteFile ? `<a href="#/e/${folderId}/${noteFile.id}">고치기</a>` : '<button type="button" class="link" id="add-note">만들기</button>'}</p>${noteFile ? memoHtml(note) : ''}`;
   $app.innerHTML = `
@@ -266,7 +287,7 @@ async function showEditor(folderId, fileId) {
         </div>
         ${notePart || memoPart ? `<div class="plaque memo-card"><div class="memo-body">${notePart}${memoPart}</div></div>` : ''}
       </div></aside>
-      <div class="sheet">${isForm ? '<div class="form" id="form"></div>' : ''}<textarea id="text" spellcheck="false" placeholder="첫 문장을 써 보세요" aria-label="원고"></textarea></div>
+      <div class="sheet">${isForm ? '<div class="form" id="form"></div>' : ''}${meta.name === CAST ? '<button type="button" class="act ghost" id="add-card">+ 인물 추가</button>' : ''}<textarea id="text" spellcheck="false" placeholder="첫 문장을 써 보세요" aria-label="원고"></textarea></div>
     </div>
     <div class="counter" id="counter">
       <p class="counter-cheer" id="counter-cheer" aria-live="polite"></p>
@@ -277,7 +298,7 @@ async function showEditor(folderId, fileId) {
     </div>`;
   const ta = $app.querySelector('#text');
   ta.value = text;
-  editing = { folderId, fileId, name: meta.name, modifiedTime: meta.modifiedTime, base: remote, dirty, timer: null, saving: false, pending: false, ta, lastCount: null, work: folder.name, memo: memo ?? '', note: note ?? '', noteId: noteFile?.id };
+  editing = { folderId, fileId, name: meta.name, modifiedTime: meta.modifiedTime, base: remote, dirty, timer: null, saving: false, pending: false, ta, lastCount: null, work: folder.name, memo: memo ?? '', cast: cast ?? '', note: note ?? '', noteId: noteFile?.id };
   // 지난 화 설정은 미리 읽어 둔다. 복사 버튼을 누른 뒤에 읽으면 휴대폰에서 클립보드 복사가 막힐 수 있다.
   const isSummary = meta.name === SUMMARY;
   const summaryFile = siblings.find((f) => f.name === SUMMARY && f.id !== fileId);
@@ -331,6 +352,12 @@ async function showEditor(folderId, fileId) {
       raw.textContent = ta.hidden ? '글자로 고치기' : '칸으로 고치기';
     };
   }
+  $app.querySelector('#add-card')?.addEventListener('click', () => {
+    ta.value = `${ta.value.replace(/\s*$/, '\n\n')}${CAST_CARD}`;
+    ta.dispatchEvent(new Event('input'));
+    const names = $app.querySelectorAll('#form textarea[aria-label^="이름 "]');
+    names[names.length - 1]?.focus();
+  });
   $app.querySelector('#add-note')?.addEventListener('click', async () => {
     try {
       const f = await drive.createText(episodeNoteName(epNum), folderId, episodeTemplate(epNum));
@@ -369,6 +396,11 @@ function setupForm(ta, box) {
     '가제': '회귀한 하급 기사', '장르': '회귀 / 판타지', '핵심 재미 (한 줄)': '실력은 그대로라 꼼수로 버티는 맛',
     '주인공이 끝까지 원하는 것': '가문 몰락을 막는 것', '참고작 / 비슷한 느낌': '○○의 템포, △△의 개그 톤',
     '회당 분량': '공백 포함 5,000자', '시점': '1인칭 주인공', '피하고 싶은 것': '하렘, 과한 사이다',
+    '나이 / 학년·직업': '17살, 고2', '키 / 체격': '172cm, 마른 편, 어깨가 좁음', '얼굴형 / 피부': '갸름한 얼굴, 하얀 편, 볼에 주근깨',
+    '눈 (모양·색·인상)': '쌍꺼풀 없는 가는 눈, 짙은 갈색, 졸려 보임', '머리 (색·길이·모양)': '검은 머리, 눈썹을 덮는 앞머리, 뒷머리 뻗침',
+    '평소 옷차림': '교복 위에 회색 후드, 운동화 뒤축을 꺾어 신음', '흉터·점·문신 (위치까지)': '왼쪽 눈썹 끝에 3cm 흉터, 오른쪽 목에 점',
+    '관심 분야와 수준': '심리학 / 교양서·유튜브로 독학, 전공 수준 아님', '잘 아는 것': '인지부조화, 방관자 효과, 확증 편향, 애착 유형',
+    '모르는 것 / 틀리게 아는 것': '진단 기준(DSM), 상담 기법, 통계·연구 방법', '아는 걸 쓰는 버릇': '친구 행동을 용어로 분석하다 가끔 틀림',
   };
   const render = () => {
     blocks = parseDoc(ta.value);
@@ -479,7 +511,7 @@ const PRESETS = {
     + '본문에 이미 쓴 글이 있으면 살려서 이어 가. 빈칸은 네가 정하고, 뭘 정했는지 코드 블록 밖에 짧게 적어줘. '
     + '너의 역할에 적힌 말투는 설명할 때만 쓰고 원고 문체에는 섞지 마. 완성한 원고 전체를 ```수정본 블록 하나에 담아줘.',
   feedback: '이 회차를 읽고 좋은 점과 고칠 점을 구체적으로 알려줘. 원고는 고치지 말고 의견만 줘.',
-  check: '설정 메모, 지난 화 설정과 어긋나거나 앞뒤가 맞지 않는 부분을 찾아서, 해당 문장을 인용하고 왜 어긋나는지 알려줘.',
+  check: '설정 메모, 인물 설정, 지난 화 설정과 어긋나거나 앞뒤가 맞지 않는 부분을 찾아서, 해당 문장을 인용하고 왜 어긋나는지 알려줘.',
   polish: '문체와 내용은 그대로 두고 어색한 문장, 맞춤법, 띄어쓰기를 고쳐줘.',
   continue: '이 회차 마지막 장면에서 자연스럽게 이어지는 다음 장면 초안을 써줘.',
   free: '',
@@ -499,7 +531,7 @@ function setupAi() {
     const ep = parseEpisodeName(editing.name);
     const text = buildPrompt({
       concept: aiSettings.concept, request: PRESETS[af.preset.value], extra: af.extra.value, work: editing.work,
-      episode: ep ? `${ep.num}화 ${ep.title}` : displayName(editing.name), memo: editing.memo, note: editing.note, text: editing.ta.value,
+      episode: ep ? `${ep.num}화 ${ep.title}` : displayName(editing.name), memo: editing.memo, cast: editing.cast, note: editing.note, text: editing.ta.value,
       past: af.past.checked ? await editing.past : '',
     });
     done.textContent = (await copyText(text, $ask))
