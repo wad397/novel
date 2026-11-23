@@ -11,7 +11,8 @@ const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const ROOT_NAME = '내소설';
 const SETTINGS = '설정.md';
 const SUMMARY = '요약.md';
-const CAST = '인물.md';
+const CAST = '인물.md'
+const COVER = '표지.jpg';
 const SAVE_DELAY = 2000;
 const UNITS = { chars: ['글자 수', '자'], words: ['단어 수', '단어'], sentences: ['문장 수', '문장'], bytes: ['용량', '바이트'] };
 const COUNT_KEY = 'count-settings';
@@ -128,13 +129,16 @@ async function route() {
 
 async function showNovels() {
   $app.innerHTML = LOADING;
-  const items = (await drive.listChildren(rootId))
-    .filter((f) => f.mimeType === 'application/vnd.google-apps.folder')
-    .sort((x, y) => x.name.localeCompare(y.name, 'ko'));
+  const [all, covers] = await Promise.all([drive.listChildren(rootId), drive.findAll(COVER).catch(() => [])]);
+  const items = all.filter((f) => f.mimeType === 'application/vnd.google-apps.folder').sort((x, y) => x.name.localeCompare(y.name, 'ko'));
+  const coverOf = (f) => covers.find((c) => c.parents?.includes(f.id))?.id ?? '';
   $app.innerHTML = `
     <header class="page-head"><p class="place">집필</p><h1>작품</h1><p class="head-tools"><button class="link open-settings">설정</button><button class="link" id="logout">로그아웃</button></p></header>
-    <ul class="works">${items.map((f) => `<li><a href="#/n/${f.id}"><span class="work-title">${esc(f.name)}</span><span class="date">${day(f.modifiedTime)} 수정</span></a></li>`).join('') || '<li class="empty">아직 작품이 없어요. 첫 작품을 만들어 보세요.</li>'}</ul>
+    <ul class="works">${items.map((f) => `<li><a href="#/n/${f.id}"><span class="cover" data-cover="${coverOf(f)}"><img alt="" hidden><i>${esc([...f.name.trim()][0] ?? '')}</i></span><span class="work-title">${esc(f.name)}</span><span class="date">${day(f.modifiedTime)} 수정</span></a></li>`).join('') || '<li class="empty">아직 작품이 없어요. 첫 작품을 만들어 보세요.</li>'}</ul>
     <button id="add" class="act">새 작품 만들기</button>`;
+  for (const el of $app.querySelectorAll('[data-cover]:not([data-cover=""])')) {
+    drive.readBlob(el.dataset.cover).then((b) => { const img = el.querySelector('img'); img.src = URL.createObjectURL(b); img.hidden = false; }).catch(() => {});
+  }
   $app.querySelector('#logout').onclick = logout;
   $app.querySelector('#add').onclick = async () => {
     const title = prompt('작품 제목');
@@ -154,6 +158,7 @@ async function showNovel(folderId) {
   const settings = md.find((f) => f.name === SETTINGS);
   const summaryFile = md.find((f) => f.name === SUMMARY);
   const castFile = md.find((f) => f.name === CAST);
+  let coverId = files.find((f) => f.name === COVER)?.id ?? null;
   const copies = md.filter((f) => isConflictCopy(f.name));
   const episodes = md.filter((f) => f !== settings && f !== summaryFile && f !== castFile && !parseNoteName(f.name)).sort((x, y) =>
     (parseEpisodeName(x.name)?.num ?? Infinity) - (parseEpisodeName(y.name)?.num ?? Infinity) || x.name.replace(/\.md$/, '').localeCompare(y.name.replace(/\.md$/, ''), 'ko'));
@@ -162,7 +167,7 @@ async function showNovel(folderId) {
     return `<li><a href="#/e/${folderId}/${f.id}"><span class="no">${ep ? String(ep.num).padStart(3, '0') : ''}</span><span class="ep-title">${esc(ep ? ep.title : displayName(f.name))}</span><span class="date">${day(f.modifiedTime)}</span></a></li>`;
   };
   $app.innerHTML = `
-    <header class="page-head"><a href="#/" class="place">작품</a><h1>${esc(folder.name)}</h1><p class="head-tools">${EXPORT_BUTTONS}<button class="link" id="tidy-notes">회차 설정 한 번에 정리</button>${copies.length ? `<button class="link danger" id="trash-copies">충돌 사본 ${copies.length}개 지우기</button>` : ''}<button class="link open-settings">설정</button><button class="link danger" id="delete-work">작품 휴지통으로</button></p></header>
+    <header class="page-head with-cover">${frameHtml('표지')}<a href="#/" class="place">작품</a><h1>${esc(folder.name)}</h1><p class="head-tools">${EXPORT_BUTTONS}<button class="link" id="tidy-notes">회차 설정 한 번에 정리</button>${copies.length ? `<button class="link danger" id="trash-copies">충돌 사본 ${copies.length}개 지우기</button>` : ''}<button class="link open-settings">설정</button><button class="link danger" id="delete-work">작품 휴지통으로</button></p></header>
     <nav class="shelf" aria-label="작품 자료">
       ${settings ? `<a href="#/e/${folderId}/${settings.id}"><i>작품</i><b>설정 메모</b><small>작품 정보, 세계관, 떠올린 장면</small></a>` : ''}
       <a href="${castFile ? `#/p/${folderId}/${castFile.id}` : '#'}" id="cast-link"><i>인물</i><b>인물 설정</b><small>생김새부터 아는 것까지 인물마다</small></a>
@@ -171,6 +176,7 @@ async function showNovel(folderId) {
     <p class="list-label">회차 · ${episodes.filter((f) => parseEpisodeName(f.name)).length}</p>
     <ol class="episodes">${episodes.map(row).join('') || '<li class="empty">아직 회차가 없어요. 첫 회차를 만들어 보세요.</li>'}</ol>
     <button id="add" class="act">새 회차 만들기</button>`;
+  setupFrame($app.querySelector('.portrait'), '표지', folderId, () => COVER, () => coverId, (id) => { coverId = id; });
   for (const b of $app.querySelectorAll('[data-export]')) b.onclick = async () => {
     const list = episodes.filter((f) => parseEpisodeName(f.name) && !isConflictCopy(f.name));
     if (!list.length) return alert('내보낼 회차가 없어요.');
@@ -371,7 +377,7 @@ async function showEditor(folderId, fileId, card = null) {
         <div class="plaque">
           ${card === null ? `<a href="#/n/${folderId}" class="place">${esc(folder.name)}</a>` : `<a href="#/p/${folderId}/${fileId}" class="place">${esc(folder.name)} · 인물 설정</a>`}
           <h1 id="title"></h1>
-          ${card === null ? '' : '<figure class="portrait empty" id="portrait"><button type="button" class="frame" id="photo-pick" aria-label="사진 넣기"><img alt="" hidden><span>사진 넣기</span></button><figcaption><button type="button" class="link" id="photo-change" hidden>사진 바꾸기</button><button type="button" class="link danger" id="photo-del" hidden>사진 빼기</button></figcaption><input type="file" accept="image/*" id="photo-file" hidden></figure>'}
+          ${card === null ? '' : frameHtml('사진')}
           <p class="status" id="status"></p>
           <p class="tools">${isEpisode ? '<button id="rename" class="link">제목 바꾸기</button><button id="delete" class="link">휴지통으로</button>' + EXPORT_BUTTONS : isConflictCopy(meta.name) ? '<button id="delete" class="link">휴지통으로</button>' : ''}${card !== null ? `<a class="link" href="#/r/${folderId}/${fileId}/${card}">관계도 보기</a><button id="del-card" class="link danger">이 인물 지우기</button>` : isForm ? '<button id="raw" class="link">글자로 고치기</button>' : ''}<button class="link open-settings">설정</button></p>
           ${meta.name === SUMMARY ? '<p class="ai-tools"><button type="button" id="ask-summary">Claude에게 요약 부탁 복사</button></p><p class="quiet" id="summary-msg" aria-live="polite">새 화가 쌓이면 다시 눌러 주세요. 요약 안 된 화만 더해서 부탁해요.</p>' : ''}
@@ -450,7 +456,10 @@ async function showEditor(folderId, fileId, card = null) {
     title.textContent = cardTitle;
     document.title = `${cardTitle} - 집필`;
     $app.querySelector('#form').addEventListener('input', (e) => { if (e.target.dataset.h !== undefined) title.textContent = e.target.value; });
-    setupPortrait(folderId, card, title);
+    const photo = () => cardPhoto(parseDoc(ta.value), card);
+    const showPhoto = setupFrame($app.querySelector('.portrait'), '사진', folderId, () => `인물 사진 - ${title.textContent}.jpg`, photo,
+      (id) => { ta.value = setCardPhoto(ta.value, card, id); ta.dispatchEvent(new Event('input')); });
+    ta.addEventListener('input', () => showPhoto(photo())); // 수정본 반영으로 사진 줄이 바뀐 경우
     $app.querySelector('#del-card').onclick = async () => {
       const blocks = parseDoc(ta.value), [from, to] = cardRange(blocks, card);
       if (from === to || !confirm(`"${title.textContent}" 카드를 지울까요?\n바뀌기 전 내용은 드라이브 버전 기록에 남아요.`)) return;
@@ -480,12 +489,15 @@ async function showEditor(folderId, fileId, card = null) {
   $app.querySelector('#delete')?.addEventListener('click', deleteEpisode);
 }
 
-// 인물 카드 사진. 올릴 때 긴 변 1200px JPEG로 줄여서 작품 폴더에 넣고, 카드에는 파일 id만 적는다.
-function setupPortrait(folderId, card, title) {
-  const ta = editing.ta, box = $app.querySelector('#portrait'), img = box.querySelector('img'), file = box.querySelector('#photo-file');
-  const pick = box.querySelector('#photo-pick'), change = box.querySelector('#photo-change'), del = box.querySelector('#photo-del'), label = pick.querySelector('span');
+// 사진 액자 (인물 카드 사진, 작품 표지). 올릴 때 긴 변 1200px JPEG로 줄여서 작품 폴더에 넣는다.
+const frameHtml = (word, cls = '') => `<figure class="portrait empty ${cls}"><button type="button" class="frame" aria-label="${word} 넣기"><img alt="" hidden><span>${word} 넣기</span></button><figcaption><button type="button" class="link" data-change hidden>${word} 바꾸기</button><button type="button" class="link danger" data-del hidden>${word} 빼기</button></figcaption><input type="file" accept="image/*" hidden></figure>`;
+
+// current(): 지금 사진 파일 id. link(id): 새 id를 적어 둔다(없애면 null). 예전 사진은 드라이브 휴지통으로. 돌려주는 show(id)로 다시 그린다.
+function setupFrame(box, word, folderId, fileName, current, link) {
+  const obj = word + ((word.charCodeAt(word.length - 1) - 0xac00) % 28 ? '을' : '를'); // 사진을, 표지를
+  const img = box.querySelector('img'), file = box.querySelector('input[type=file]');
+  const pick = box.querySelector('.frame'), change = box.querySelector('[data-change]'), del = box.querySelector('[data-del]'), label = pick.querySelector('span');
   let shown, url;
-  const current = () => cardPhoto(parseDoc(ta.value), card);
   const show = async (id) => {
     if (id === shown) return;
     shown = id;
@@ -493,15 +505,15 @@ function setupPortrait(folderId, card, title) {
     url = null; img.hidden = true;
     box.classList.toggle('empty', !id);
     change.hidden = del.hidden = !id;
-    label.textContent = id ? '불러오는 중…' : '사진 넣기';
+    label.textContent = id ? '불러오는 중…' : `${word} 넣기`;
     if (!id) return;
     try {
       const u = URL.createObjectURL(await drive.readBlob(id));
       if (shown !== id) return URL.revokeObjectURL(u);
       url = img.src = u; img.hidden = false;
-    } catch (e) { if (e.status === 401) needLogin(); label.textContent = '사진을 불러오지 못했어요'; }
+    } catch (e) { if (e.status === 401) needLogin(); label.textContent = `${obj} 불러오지 못했어요`; }
   };
-  const set = (id) => { ta.value = setCardPhoto(ta.value, card, id); ta.dispatchEvent(new Event('input')); show(id); };
+  const set = (id) => { link(id); show(id); };
   pick.onclick = () => { if (!current()) file.click(); };
   change.onclick = () => file.click();
   file.onchange = async () => {
@@ -511,19 +523,19 @@ function setupPortrait(folderId, card, title) {
     const old = current();
     label.textContent = '올리는 중…'; box.classList.add('empty'); img.hidden = true; shown = undefined;
     try {
-      const up = await drive.createFile(`인물 사진 - ${title.textContent}.jpg`, folderId, await shrink(f));
+      const up = await drive.createFile(fileName(), folderId, await shrink(f));
       set(up.id);
-      if (old) drive.trash(old).catch(() => {}); // 예전 사진은 드라이브 휴지통으로
-    } catch (e) { e.status === 401 ? needLogin() : alert(`사진을 올리지 못했어요. ${e.message}`); show(old); }
+      if (old) drive.trash(old).catch(() => {});
+    } catch (e) { e.status === 401 ? needLogin() : alert(`${obj} 올리지 못했어요. ${e.message}`); show(old); }
   };
   del.onclick = () => {
     const old = current();
-    if (!old || !confirm('이 사진을 뺄까요? 사진 파일은 드라이브 휴지통으로 가요.')) return;
+    if (!old || !confirm(`이 ${obj} 뺄까요? 파일은 드라이브 휴지통으로 가요.`)) return;
     set(null);
     drive.trash(old).catch(() => {});
   };
-  ta.addEventListener('input', () => show(current())); // 수정본 반영으로 사진 줄이 바뀐 경우
   show(current());
+  return show;
 }
 
 async function shrink(file, max = 1200) {

@@ -281,3 +281,18 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .portrait figcaption { display: flex; gap: 14px; }
 .portrait figcaption:has(> :not([hidden])) { margin-top: 4px; }
 @media (max-width: 639px) { .portrait { max-width: 11rem; } }
+
+/* 작품 표지: 작품 목록의 작은 액자, 작품 화면 제목 옆 액자 */
+.works a { grid-template-columns: auto 1fr auto; align-items: center; padding-block: 14px; }
+.works .cover { position: relative; display: grid; place-items: center; width: 3rem; aspect-ratio: 3 / 4; padding: 3px; border: 1px solid var(--edge); border-radius: 2px; background: var(--sheet); box-shadow: var(--hang); }
+.works .cover img { position: absolute; inset: 3px; width: calc(100% - 6px); height: calc(100% - 6px); object-fit: cover; }
+.works .cover i { font: 1.1rem/1 var(--text); font-style: normal; color: var(--caption); }
+.page-head.with-cover { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); column-gap: 28px; align-content: start; }
+.page-head.with-cover > .portrait { grid-row: 1 / span 3; margin: 0; }
+.page-head.with-cover > :not(.portrait) { grid-column: 2; }
+.page-head.with-cover > .place { align-self: end; }
+@media (max-width: 639px) {
+  .page-head.with-cover { grid-template-columns: 5.5rem minmax(0, 1fr); column-gap: 18px; }
+  .page-head.with-cover > .portrait { max-width: none; }
+  .page-head.with-cover .portrait figcaption { flex-direction: column; gap: 0; }
+}

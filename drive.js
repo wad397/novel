@@ -43,6 +43,13 @@ export async function findOrCreateFolder(name, parentId = 'root') {
 export const createFolder = (name, parentId) =>
   json(`${API}?fields=${FIELDS}`, jsonBody('POST', { name, mimeType: FOLDER, parents: [parentId] }));
 
+// 이 앱이 만든 파일 중 이름이 같은 것 모두 (작품마다 표지 하나씩 찾을 때)
+// shortcut: 첫 1000개만 본다, 작품이 1000개를 넘으면 페이지를 넘긴다
+export async function findAll(name) {
+  const q = encodeURIComponent(`name='${escapeQuery(name)}' and trashed=false`);
+  return (await json(`${API}?q=${q}&fields=files(id,parents)&pageSize=1000`)).files;
+}
+
 export const readText = (id) => call(`${API}/${id}?alt=media`).then((r) => r.text());
 
 export const getMeta = (id) => json(`${API}/${id}?fields=${FIELDS}`);
