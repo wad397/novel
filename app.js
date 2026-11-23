@@ -345,7 +345,7 @@ async function showEditor(folderId, fileId) {
     const box = $app.querySelector('#form');
     const raw = $app.querySelector('#raw');
     ta.hidden = true;
-    setupForm(ta, box);
+    setupForm(ta, box, meta.name === CAST);
     raw.onclick = () => {
       box.hidden = ta.hidden; // 글자 화면으로 가면 칸은 숨긴다
       ta.hidden = !ta.hidden;
@@ -355,8 +355,9 @@ async function showEditor(folderId, fileId) {
   $app.querySelector('#add-card')?.addEventListener('click', () => {
     ta.value = `${ta.value.replace(/\s*$/, '\n\n')}${CAST_CARD}`;
     ta.dispatchEvent(new Event('input'));
-    const names = $app.querySelectorAll('#form textarea[aria-label^="이름 "]');
-    names[names.length - 1]?.focus();
+    const title = [...$app.querySelectorAll('#form .card-title')].at(-1);
+    title?.focus();
+    title?.select();
   });
   $app.querySelector('#add-note')?.addEventListener('click', async () => {
     try {
@@ -389,7 +390,8 @@ function memoHtml(text) {
 }
 
 // 설정 파일을 칸으로 적는 화면. 원고 칸(ta)이 그대로 원본이고, 칸을 고칠 때마다 표 글자로 되돌려 넣는다.
-function setupForm(ta, box) {
+// titles: "## " 제목을 고칠 수 있게 (인물 카드 이름)
+function setupForm(ta, box, titles = false) {
   let blocks, mine = false;
   // 빈칸에 흐리게 보여 주는 예시. 파일에는 들어가지 않는다.
   const EXAMPLES = {
@@ -405,6 +407,7 @@ function setupForm(ta, box) {
   const render = () => {
     blocks = parseDoc(ta.value);
     box.innerHTML = blocks.map((b, i) => {
+      if (b.head && titles && /^##\s/.test(b.head)) return `<input class="card-title" data-b="${i}" data-h value="${esc(b.head.replace(/^##\s*/, ''))}" aria-label="카드 제목" placeholder="카드 제목 (예: 서윤 - 주인공)">`;
       if (b.head) return /^#\s/.test(b.head) ? `<h1>${esc(b.head.replace(/^#\s*/, ''))}</h1>` : `<h2>${esc(b.head.replace(/^#+\s*/, ''))}</h2>`;
       if (b.text !== undefined) {
         return /^\s*(-(\s|$)|[-•·]\S|[•·*]\s)/m.test(b.text)
@@ -430,7 +433,8 @@ function setupForm(ta, box) {
   box.addEventListener('input', (e) => {
     const { b, r, c } = e.target.dataset;
     if (b === undefined) return;
-    if (r === undefined) blocks[b].text = e.target.value.trim() ? e.target.value : '-'; // 다 지워도 칸이 사라지지 않게
+    if (e.target.dataset.h !== undefined) blocks[b].head = `## ${e.target.value.replace(/\s+/g, ' ').trim() || '인물'}`;
+    else if (r === undefined) blocks[b].text = e.target.value.trim() ? e.target.value : '-'; // 다 지워도 칸이 사라지지 않게
     else blocks[b].rows[r][c] = e.target.value;
     commit();
   });

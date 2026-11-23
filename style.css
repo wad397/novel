@@ -200,6 +200,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .form { display: grid; gap: 12px; }
 .form h1 { margin: 0 0 4px; font: 400 1.6rem/1.4 var(--text); }
 .form h2 { margin: 26px 0 0; font: 400 1.2rem/1.4 var(--text); }
+.form .card-title { display: block; width: 100%; margin: 40px 0 0; padding: 6px 10px; border: 0; border-bottom: 2px solid var(--ink); background: transparent; color: var(--ink); font: 400 1.4rem/1.4 var(--text); }
+.form .card-title:focus { outline: 2px solid var(--ink); outline-offset: 2px; }
 .form .hint { margin: 0; font-size: .9rem; }
 .form .tbl { overflow-x: auto; }
 .form table { width: 100%; border-collapse: collapse; font-size: .9rem; }
