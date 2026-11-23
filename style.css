@@ -55,8 +55,16 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .episodes .no { color: var(--caption); font-variant-numeric: tabular-nums; font-size: .9rem; }
 .ep-title { font: 1.1rem/1.5 var(--text); min-width: 0; overflow-wrap: anywhere; }
 .works a:hover .work-title, .episodes a:hover .ep-title { text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 1px; }
-.memo { max-width: 46rem; margin-bottom: 24px; color: var(--caption); font-size: .9rem; }
-.memo a { color: var(--ink); font-family: var(--text); font-size: 1.05rem; margin-right: 10px; text-underline-offset: 3px; }
+/* 작품 자료: 설명판 세 장 */
+.shelf { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; max-width: 46rem; margin: 0 0 44px; }
+.shelf a { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 18px 18px 20px; background: var(--plaque); border: 1px solid var(--edge); border-radius: 2px; color: var(--ink); text-decoration: none; transition: border-color .15s; }
+.shelf a::after { content: "→"; position: absolute; top: 18px; right: 16px; color: var(--caption); transition: transform .15s, color .15s; }
+.shelf a:hover { border-color: var(--ink); }
+.shelf a:hover::after { color: var(--ink); transform: translateX(3px); }
+.shelf b { font: 400 1.15rem/1.4 var(--text); padding-right: 1.4rem; }
+.shelf small { color: var(--caption); font-size: .8rem; line-height: 1.55; }
+.list-label { max-width: 46rem; margin: 0 0 10px; color: var(--caption); font: 500 .75rem/1 var(--sign); letter-spacing: .06em; }
+@media (max-width: 620px) { .shelf { grid-template-columns: 1fr; gap: 8px; } .shelf a { padding: 14px 16px; } .shelf a::after { top: 14px; } }
 
 /* 편집기: 원고 한 장 + 오른쪽 설명판 */
 .room { display: grid; grid-template-columns: minmax(0, 44rem) 15rem; gap: 40px; justify-content: center; }
@@ -130,6 +138,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .panel input[role="switch"]:checked { background: var(--ink); border-color: var(--ink); }
 .panel input[role="switch"]:checked::after { transform: translateX(14px); background: var(--sheet); }
 .head-tools { display: flex; flex-wrap: wrap; gap: 0 18px; margin-top: 6px; }
+.head-tools .link { text-decoration: none; }
+.head-tools .link:hover { text-decoration: underline; }
 .danger:hover { color: var(--dot); }
 @media (max-width: 520px) {
   .panel-form { padding: 20px 18px 24px; }

@@ -91,7 +91,7 @@ const CAST_PARTS = [
   ['아는 것과 모르는 것', ['관심 분야와 수준', '잘 아는 것', '모르는 것 / 틀리게 아는 것', '아는 걸 쓰는 버릇']],
 ];
 const CAST_ALIAS = { '나이 / 학년·직업': '직업' }; // 예전 칸 이름
-const castCard = (p = {}) => `## 인물
+const castCard = (p = {}) => `## ${p['이름']?.trim() || '인물'}
 
 ${CAST_PARTS.map(([part, rows]) => `### ${part}
 
@@ -112,6 +112,27 @@ const CAST_HEAD = `# 인물 설정
 `;
 export const CAST_CARD = castCard();
 export const castTemplate = (people = []) => CAST_HEAD + (people.length ? people : [{}]).map(castCard).join('\n');
+
+// 인물 설정 덩어리(parseDoc)에서 k번째 카드("## " 제목부터 다음 "## " 또는 "# " 앞까지)의 [시작, 끝]. 없으면 [0, 0].
+export function cardRange(blocks, k) {
+  const starts = blocks.map((b, i) => (/^##\s/.test(b.head ?? '') ? i : -1)).filter((i) => i >= 0);
+  if (!(k in starts)) return [0, 0];
+  const end = blocks.findIndex((b, i) => i > starts[k] && /^##?\s/.test(b.head ?? ''));
+  return [starts[k], end < 0 ? blocks.length : end];
+}
+
+// 카드 목록: 제목과 이름·역할
+export function castCards(blocks) {
+  const out = [];
+  for (let k = 0; ; k++) {
+    const [from, to] = cardRange(blocks, k);
+    if (from === to) return out;
+    const rows = blocks.slice(from, to).flatMap((b) => (b.cols?.length === 2 ? b.rows : []));
+    const get = (key) => rows.find((r) => r[0] === key)?.[1] ?? '';
+    const title = blocks[from].head.replace(/^##\s*/, '');
+    out.push({ title: title === '인물' && get('이름') ? get('이름') : title, name: get('이름'), role: get('역할') }); // 제목을 안 바꾼 카드는 이름으로
+  }
+}
 
 // 예전 작품 설정의 "인물 카드" 칸을 떼어 낸다. 뒤 칸 번호는 하나씩 당긴다. 칸이 없으면 null.
 export function takeCast(memo) {

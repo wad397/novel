@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
-  episodeNoteName, parseNoteName, episodeTemplate, WORK_TEMPLATE, addSeedScene, castTemplate, CAST_CARD, takeCast, castBrief, parseDoc, formatDoc, tidyNote, pastNotes, summaryPrompt, summaryUpto, tableCells, isConflictCopy, exportText, countText, assist, diff, extractRevision, buildPrompt, isConflict, escapeQuery, sanitizeTitle,
+  episodeNoteName, parseNoteName, episodeTemplate, WORK_TEMPLATE, addSeedScene, castTemplate, CAST_CARD, takeCast, castBrief, cardRange, castCards, parseDoc, formatDoc, tidyNote, pastNotes, summaryPrompt, summaryUpto, tableCells, isConflictCopy, exportText, countText, assist, diff, extractRevision, buildPrompt, isConflict, escapeQuery, sanitizeTitle,
 } from '../logic.js';
 
 test('회차 파일 이름', () => {
@@ -257,11 +257,22 @@ test('인물 설정: 양식, 예전 인물 카드 옮기기, Claude에게 보낼
 
   // 빈칸·안내·빈 제목은 빼고 보낸다
   const brief = castBrief(moved);
-  assert.match(brief, /^# 인물 설정\n\n## 인물\n\n### 기본\n\n\| 항목 \| 내용 \|\n\|---\|---\|\n\| 이름 \| 닉스 \|\n\| 역할 \| 친구 \|\n\| 나이 \/ 학년·직업 \| 대장장이 \|\n\n### 성격과 말투/);
+  assert.match(brief, /^# 인물 설정\n\n## 닉스\n\n### 기본\n\n\| 항목 \| 내용 \|\n\|---\|---\|\n\| 이름 \| 닉스 \|\n\| 역할 \| 친구 \|\n\| 나이 \/ 학년·직업 \| 대장장이 \|\n\n### 성격과 말투/);
   assert.doesNotMatch(brief, /생김새|성별|인물마다 카드|23화/);
   assert.equal(castBrief(castTemplate()), '');
 
   const ask = (cast) => buildPrompt({ concept: '', request: 'r', extra: '', work: 'w', episode: 'e', memo: 'm', cast, text: 't' });
   assert.match(ask(moved), /\[설정 메모\]\nm\n\n\[인물 설정\]\n# 인물 설정[\s\S]*모른다고 적힌 건 아는 척하지 말고/);
   assert.doesNotMatch(ask(castTemplate()), /인물 설정\]|아는 척/);
+});
+
+test('인물 카드 목록과 한 카드의 범위', () => {
+  const blocks = parseDoc(`${castTemplate([{ 이름: '서윤', 역할: '주인공' }, { 이름: '닉스' }])}`.replace('## 서윤', '## 서윤 - 주인공'));
+  assert.deepEqual(castCards(blocks), [{ title: '서윤 - 주인공', name: '서윤', role: '주인공' }, { title: '닉스', name: '닉스', role: '' }]);
+  const [from, to] = cardRange(blocks, 1);
+  assert.equal(blocks[from].head, '## 닉스');
+  assert.equal(to, blocks.length);
+  assert.ok(blocks.slice(from, to).every((b, i) => i === 0 || !/^##\s/.test(b.head ?? '')));
+  assert.deepEqual(cardRange(blocks, 2), [0, 0]);
+  assert.deepEqual(castCards(parseDoc('# 인물 설정\n\n안내\n')), []);
 });

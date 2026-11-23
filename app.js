@@ -1,7 +1,7 @@
 import * as drive from './drive.js';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
-  episodeNoteName, parseNoteName, WORK_TEMPLATE, addSeedScene, castTemplate, CAST_CARD, takeCast, episodeTemplate, parseDoc, formatDoc, tidyNote, pastNotes, summaryPrompt,
+  episodeNoteName, parseNoteName, WORK_TEMPLATE, addSeedScene, castTemplate, CAST_CARD, takeCast, cardRange, castCards, episodeTemplate, parseDoc, formatDoc, tidyNote, pastNotes, summaryPrompt,
   countText, assist, diff, extractRevision, buildPrompt, isConflict, sanitizeTitle, isConflictCopy, exportText,
 } from './logic.js';
 
@@ -116,10 +116,11 @@ function failed(e, retry) {
 // ---------- 화면 ----------
 async function route() {
   if (editing) leaveEditor();
-  const [, kind, a, b] = location.hash.split('/');
+  const [, kind, a, b, c] = location.hash.split('/');
   try {
     if (kind === 'n') await showNovel(a);
-    else if (kind === 'e') await showEditor(a, b);
+    else if (kind === 'e') await showEditor(a, b, c === undefined ? null : Number(c));
+    else if (kind === 'p') await showCast(a, b);
     else await showNovels();
   } catch (e) { failed(e, route); }
 }
@@ -161,9 +162,12 @@ async function showNovel(folderId) {
   };
   $app.innerHTML = `
     <header class="page-head"><a href="#/" class="place">작품</a><h1>${esc(folder.name)}</h1><p class="head-tools">${EXPORT_BUTTONS}<button class="link" id="tidy-notes">회차 설정 한 번에 정리</button>${copies.length ? `<button class="link danger" id="trash-copies">충돌 사본 ${copies.length}개 지우기</button>` : ''}<button class="link open-settings">설정</button><button class="link danger" id="delete-work">작품 휴지통으로</button></p></header>
-    ${settings ? `<p class="memo"><a href="#/e/${folderId}/${settings.id}">설정 메모</a> 작품 정보와 세계관을 적어 두는 곳</p>` : ''}
-    <p class="memo"><a href="${castFile ? `#/e/${folderId}/${castFile.id}` : '#'}" id="cast-link">인물 설정</a> 인물마다 생김새, 몸 특이사항, 아는 것까지 자세히</p>
-    <p class="memo"><a href="${summaryFile ? `#/e/${folderId}/${summaryFile.id}` : '#'}" id="summary-link">오래된 화 요약</a> 최근 10화보다 앞 화 설정을 Claude가 줄여 둔 것</p>
+    <nav class="shelf" aria-label="작품 자료">
+      ${settings ? `<a href="#/e/${folderId}/${settings.id}"><b>설정 메모</b><small>작품 정보, 세계관, 떠올린 장면</small></a>` : ''}
+      <a href="${castFile ? `#/p/${folderId}/${castFile.id}` : '#'}" id="cast-link"><b>인물 설정</b><small>생김새부터 아는 것까지 인물마다</small></a>
+      <a href="${summaryFile ? `#/e/${folderId}/${summaryFile.id}` : '#'}" id="summary-link"><b>오래된 화 요약</b><small>최근 10화 앞을 Claude가 줄여 둔 것</small></a>
+    </nav>
+    <p class="list-label">회차 ${episodes.filter((f) => parseEpisodeName(f.name)).length}</p>
     <ol class="episodes">${episodes.map(row).join('') || '<li class="empty">아직 회차가 없어요. 첫 회차를 만들어 보세요.</li>'}</ol>
     <button id="add" class="act">새 회차 만들기</button>`;
   for (const b of $app.querySelectorAll('[data-export]')) b.onclick = async () => {
@@ -186,12 +190,12 @@ async function showNovel(folderId) {
 옮긴 뒤 작품 설정에서는 인물 카드 칸이 빠져요. 바뀌기 전 내용은 드라이브 버전 기록에 남아요.
 취소하면 빈 인물 설정만 만들어요.`)) {
         const f = await drive.createText(CAST, folderId, castTemplate());
-        location.hash = `#/e/${folderId}/${f.id}`;
+        location.hash = `#/p/${folderId}/${f.id}`;
         return;
       }
       const f = await drive.createText(CAST, folderId, castTemplate(taken?.people));
       if (taken) await drive.updateText(settings.id, taken.memo);
-      location.hash = `#/e/${folderId}/${f.id}`;
+      location.hash = `#/p/${folderId}/${f.id}`;
     } catch (e) { e.status === 401 ? needLogin() : alert(`인물 설정을 만들지 못했어요. ${e.message}`); }
   };
   if (!summaryFile) $app.querySelector('#summary-link').onclick = async (ev) => {
@@ -249,7 +253,27 @@ async function showNovel(folderId) {
   };
 }
 
-async function showEditor(folderId, fileId) {
+// 인물 설정 목록: 카드 제목을 누르면 그 카드만 고치는 화면으로
+async function showCast(folderId, fileId) {
+  $app.innerHTML = LOADING;
+  const [folder, text] = await Promise.all([drive.getMeta(folderId), drive.readText(fileId)]);
+  const cards = castCards(parseDoc(text));
+  $app.innerHTML = `
+    <header class="page-head"><a href="#/n/${folderId}" class="place">${esc(folder.name)}</a><h1>인물 설정</h1><p class="head-tools"><a class="link" href="#/e/${folderId}/${fileId}">한 화면에서 모두 고치기</a></p></header>
+    <ol class="episodes">${cards.map((c, k) => `<li><a href="#/e/${folderId}/${fileId}/${k}"><span class="no">${String(k + 1).padStart(2, '0')}</span><span class="ep-title">${esc(c.title)}</span><span class="date">${esc([c.name !== c.title && c.name, c.role].filter(Boolean).join(' · '))}</span></a></li>`).join('') || '<li class="empty">아직 인물이 없어요. 첫 인물을 만들어 보세요.</li>'}</ol>
+    <button id="add" class="act">새 인물 만들기</button>`;
+  $app.querySelector('#add').onclick = async () => {
+    const title = prompt('카드 제목 (예: 서윤 - 주인공)');
+    if (title === null) return;
+    try {
+      const now = await drive.readText(fileId); // 다른 기기에서 고친 것까지 살려서 붙인다
+      await drive.updateText(fileId, `${now.replace(/\s*$/, '\n\n')}${CAST_CARD.replace(/^## 인물/, `## ${title.replace(/\s+/g, ' ').trim() || '인물'}`)}`);
+      location.hash = `#/e/${folderId}/${fileId}/${castCards(parseDoc(now)).length}`;
+    } catch (e) { e.status === 401 ? needLogin() : alert(`인물을 만들지 못했어요. ${e.message}`); }
+  };
+}
+
+async function showEditor(folderId, fileId, card = null) {
   $app.innerHTML = LOADING;
   const [meta, remote, folder, siblings] = await Promise.all([
     drive.getMeta(fileId), drive.readText(fileId), drive.getMeta(folderId), drive.listChildren(folderId),
@@ -271,23 +295,25 @@ async function showEditor(folderId, fileId) {
 
   const isEpisode = !!epNum;
   const isForm = meta.name === SETTINGS || meta.name === CAST || !!parseNoteName(meta.name);
+  if (meta.name !== CAST) card = null;
+  const cardTitle = card === null ? null : castCards(parseDoc(text))[card]?.title ?? '없는 인물';
   const memoPart = memoFile ? `<p class="memo-head"><span>${isEpisode ? '작품 설정' : '설정 메모'}</span><a href="#/e/${folderId}/${memoFile.id}">고치기</a></p>${memoHtml(memo)}` : '';
   const notePart = !isEpisode ? '' : `<p class="memo-head"><span>이번 화 설정</span>${noteFile ? `<a href="#/e/${folderId}/${noteFile.id}">고치기</a>` : '<button type="button" class="link" id="add-note">만들기</button>'}</p>${noteFile ? memoHtml(note) : ''}`;
   $app.innerHTML = `
     <div class="room">
       <aside class="label"><div class="label-in">
         <div class="plaque">
-          <a href="#/n/${folderId}" class="place">${esc(folder.name)}</a>
+          ${card === null ? `<a href="#/n/${folderId}" class="place">${esc(folder.name)}</a>` : `<a href="#/p/${folderId}/${fileId}" class="place">${esc(folder.name)} · 인물 설정</a>`}
           <h1 id="title"></h1>
           <p class="status" id="status"></p>
-          <p class="tools">${isEpisode ? '<button id="rename" class="link">제목 바꾸기</button><button id="delete" class="link">휴지통으로</button>' + EXPORT_BUTTONS : isConflictCopy(meta.name) ? '<button id="delete" class="link">휴지통으로</button>' : ''}${isForm ? '<button id="raw" class="link">글자로 고치기</button>' : ''}<button class="link open-settings">설정</button></p>
+          <p class="tools">${isEpisode ? '<button id="rename" class="link">제목 바꾸기</button><button id="delete" class="link">휴지통으로</button>' + EXPORT_BUTTONS : isConflictCopy(meta.name) ? '<button id="delete" class="link">휴지통으로</button>' : ''}${card !== null ? '<button id="del-card" class="link danger">이 인물 지우기</button>' : isForm ? '<button id="raw" class="link">글자로 고치기</button>' : ''}<button class="link open-settings">설정</button></p>
           ${meta.name === SUMMARY ? '<p class="ai-tools"><button type="button" id="ask-summary">Claude에게 요약 부탁 복사</button></p><p class="quiet" id="summary-msg" aria-live="polite">새 화가 쌓이면 다시 눌러 주세요. 요약 안 된 화만 더해서 부탁해요.</p>' : ''}
           <p class="ai-tools"><button type="button" class="open-ask">Claude에게 묻기</button><button type="button" class="open-apply">수정본 반영</button></p>
           <p class="no" id="no"></p>
         </div>
         ${notePart || memoPart ? `<div class="plaque memo-card"><div class="memo-body">${notePart}${memoPart}</div></div>` : ''}
       </div></aside>
-      <div class="sheet">${isForm ? '<div class="form" id="form"></div>' : ''}${meta.name === CAST ? '<button type="button" class="act ghost" id="add-card">+ 인물 추가</button>' : ''}<textarea id="text" spellcheck="false" placeholder="첫 문장을 써 보세요" aria-label="원고"></textarea></div>
+      <div class="sheet">${isForm ? '<div class="form" id="form"></div>' : ''}<textarea id="text" spellcheck="false" placeholder="첫 문장을 써 보세요" aria-label="원고"></textarea></div>
     </div>
     <div class="counter" id="counter">
       <p class="counter-cheer" id="counter-cheer" aria-live="polite"></p>
@@ -345,20 +371,31 @@ async function showEditor(folderId, fileId) {
     const box = $app.querySelector('#form');
     const raw = $app.querySelector('#raw');
     ta.hidden = true;
-    setupForm(ta, box, meta.name === CAST);
-    raw.onclick = () => {
+    setupForm(ta, box, meta.name === CAST, card);
+    if (raw) raw.onclick = () => {
       box.hidden = ta.hidden; // 글자 화면으로 가면 칸은 숨긴다
       ta.hidden = !ta.hidden;
       raw.textContent = ta.hidden ? '글자로 고치기' : '칸으로 고치기';
     };
   }
-  $app.querySelector('#add-card')?.addEventListener('click', () => {
-    ta.value = `${ta.value.replace(/\s*$/, '\n\n')}${CAST_CARD}`;
-    ta.dispatchEvent(new Event('input'));
-    const title = [...$app.querySelectorAll('#form .card-title')].at(-1);
-    title?.focus();
-    title?.select();
-  });
+  if (card !== null) {
+    const title = $app.querySelector('#title');
+    title.textContent = cardTitle;
+    document.title = `${cardTitle} - 집필`;
+    $app.querySelector('#form').addEventListener('input', (e) => { if (e.target.dataset.h !== undefined) title.textContent = e.target.value; });
+    $app.querySelector('#del-card').onclick = async () => {
+      const blocks = parseDoc(ta.value), [from, to] = cardRange(blocks, card);
+      if (from === to || !confirm(`"${title.textContent}" 카드를 지울까요?\n바뀌기 전 내용은 드라이브 버전 기록에 남아요.`)) return;
+      blocks.splice(from, to - from);
+      ta.value = formatDoc(blocks);
+      ta.dispatchEvent(new Event('input'));
+      // 목록이 지운 뒤의 파일을 읽도록 저장이 끝날 때까지 기다린다
+      const ed = editing;
+      await save(ed);
+      for (let n = 0; (ed.saving || ed.dirty) && n < 50; n++) await new Promise((r) => setTimeout(r, 100));
+      location.hash = `#/p/${folderId}/${fileId}`;
+    };
+  }
   $app.querySelector('#add-note')?.addEventListener('click', async () => {
     try {
       const f = await drive.createText(episodeNoteName(epNum), folderId, episodeTemplate(epNum));
@@ -390,8 +427,8 @@ function memoHtml(text) {
 }
 
 // 설정 파일을 칸으로 적는 화면. 원고 칸(ta)이 그대로 원본이고, 칸을 고칠 때마다 표 글자로 되돌려 넣는다.
-// titles: "## " 제목을 고칠 수 있게 (인물 카드 이름)
-function setupForm(ta, box, titles = false) {
+// titles: "## " 제목을 고칠 수 있게 (인물 카드 이름). card: 그 카드만 보여 준다.
+function setupForm(ta, box, titles = false, card = null) {
   let blocks, mine = false;
   // 빈칸에 흐리게 보여 주는 예시. 파일에는 들어가지 않는다.
   const EXAMPLES = {
@@ -406,7 +443,10 @@ function setupForm(ta, box, titles = false) {
   };
   const render = () => {
     blocks = parseDoc(ta.value);
+    const [from, to] = card === null ? [0, blocks.length] : cardRange(blocks, card);
+    if (from === to) { box.innerHTML = '<p class="hint">이 인물 카드를 찾지 못했어요. 인물 설정 목록에서 다시 골라 주세요.</p>'; return; }
     box.innerHTML = blocks.map((b, i) => {
+      if (i < from || i >= to) return '';
       if (b.head && titles && /^##\s/.test(b.head)) return `<input class="card-title" data-b="${i}" data-h value="${esc(b.head.replace(/^##\s*/, ''))}" aria-label="카드 제목" placeholder="카드 제목 (예: 서윤 - 주인공)">`;
       if (b.head) return /^#\s/.test(b.head) ? `<h1>${esc(b.head.replace(/^#\s*/, ''))}</h1>` : `<h2>${esc(b.head.replace(/^#+\s*/, ''))}</h2>`;
       if (b.text !== undefined) {
