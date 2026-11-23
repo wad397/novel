@@ -268,7 +268,7 @@ async function showEditor(folderId, fileId) {
     </div>`;
   const ta = $app.querySelector('#text');
   ta.value = text;
-  editing = { folderId, fileId, name: meta.name, modifiedTime: meta.modifiedTime, dirty, timer: null, saving: false, pending: false, ta, lastCount: null, work: folder.name, memo: memo ?? '', note: note ?? '', noteId: noteFile?.id };
+  editing = { folderId, fileId, name: meta.name, modifiedTime: meta.modifiedTime, base: remote, dirty, timer: null, saving: false, pending: false, ta, lastCount: null, work: folder.name, memo: memo ?? '', note: note ?? '', noteId: noteFile?.id };
   // 지난 화 설정은 미리 읽어 둔다. 복사 버튼을 누른 뒤에 읽으면 휴대폰에서 클립보드 복사가 막힐 수 있다.
   const isSummary = meta.name === SUMMARY;
   const summaryFile = siblings.find((f) => f.name === SUMMARY && f.id !== fileId);
@@ -644,7 +644,10 @@ async function save(ed = editing) {
   if (editing === ed) setStatus('saving');
   try {
     const current = await drive.getMeta(ed.fileId);
-    if (isConflict(ed.modifiedTime, current.modifiedTime)) {
+    // 저장 시각만 다르고 내용은 내가 받은 그대로면 아무도 안 고친 것이다
+    // (화면을 빨리 오가서 앞 저장이 덜 끝났을 때 이렇게 된다). 그때는 충돌로 보지 않는다.
+    const theirs = isConflict(ed.modifiedTime, current.modifiedTime) ? await drive.readText(ed.fileId) : null;
+    if (theirs !== null && theirs !== ed.base && theirs !== text) {
       // 다른 기기에서 먼저 고쳤다: 원본은 그대로 두고 지금 글은 사본으로
       const copy = await drive.createText(conflictFileName(ed.name, new Date()), ed.folderId, text);
       store.del(ed.fileId);
@@ -653,10 +656,11 @@ async function save(ed = editing) {
         history.replaceState(null, '', `#/e/${ed.folderId}/${copy.id}`);
         renderHead();
       }
-      alert(`다른 기기에서 이 회차가 먼저 수정됐어요.\n덮어쓰지 않고 지금 글을 "${copy.name}" 파일로 따로 저장했어요.\n이제부터 이 사본에 저장돼요.`);
+      alert(`다른 기기에서 이 글이 먼저 수정됐어요.\n덮어쓰지 않고 지금 글을 "${copy.name}" 파일로 따로 저장했어요.\n이제부터 이 사본에 저장돼요.`);
     } else {
-      ed.modifiedTime = (await drive.updateText(ed.fileId, text)).modifiedTime;
+      ed.modifiedTime = theirs === text ? current.modifiedTime : (await drive.updateText(ed.fileId, text)).modifiedTime;
     }
+    ed.base = text;
     if (ed.ta.value === text) { ed.dirty = false; store.del(ed.fileId); }
     if (editing === ed) setStatus(ed.dirty ? 'typing' : 'saved');
   } catch (e) {
