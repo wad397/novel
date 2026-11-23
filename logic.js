@@ -16,19 +16,28 @@ export const nextEpisodeNumber = (names) =>
 export const episodeNoteName = (num) => `${String(num).padStart(3, '0')} 설정.md`;
 export const parseNoteName = (name) => { const m = /^(\d+) 설정\.md$/.exec(name); return m ? Number(m[1]) : null; };
 
-const SEED_HEAD = '처음 떠올린 장면';
+const SEED_HEAD = '떠올린 장면·에피소드';
+const SEED_HINT = '떠오른 장면이나 에피소드를 생각날 때마다 한 줄씩 더해요. 언제 나올지 적어 두면 AI가 그때까지 이어지게 깔아 두고, 비워 두면 어울리는 화에 넣어요. 쓴 장면은 나오는 때에 "12화에 씀"처럼 적어 두세요.';
+const SEED_COLS = '| 장면 | 나오는 때 (처음 / 중간 / 결말 / N화쯤, 비워도 돼요) | 그 전에 깔아 둘 것 |';
 const SEED_BLOCK = `## 2. ${SEED_HEAD}
 
-이 작품을 떠올리게 한 장면이에요. 꼭 첫 화일 필요는 없어요. 언제 나올지 적어 두면 AI가 그때까지 이 장면으로 이어지게 깔아 둬요.
+${SEED_HINT}
 
-| 장면 | 나오는 때 (처음 / 중간 / 결말 / N화쯤) | 그 전에 깔아 둘 것 |
+${SEED_COLS}
 |---|---|---|
 |  |  |  |
 `;
+// 앞서 넣었던 "처음 떠올린 장면" 칸의 제목·안내·머리줄. 적어 둔 줄은 그대로 두고 이것만 새 것으로 바꾼다.
+const SEED_OLD = [
+  ['처음 떠올린 장면', SEED_HEAD],
+  ['이 작품을 떠올리게 한 장면이에요. 꼭 첫 화일 필요는 없어요. 언제 나올지 적어 두면 AI가 그때까지 이 장면으로 이어지게 깔아 둬요.', SEED_HINT],
+  ['| 장면 | 나오는 때 (처음 / 중간 / 결말 / N화쯤) | 그 전에 깔아 둘 것 |', SEED_COLS],
+];
 
-// 예전 작품 설정에 "처음 떠올린 장면" 칸을 인물 카드 앞에 끼워 넣고 뒤 번호를 하나씩 민다.
+// 예전 작품 설정에 "떠올린 장면·에피소드" 칸을 인물 카드 앞에 끼워 넣고 뒤 번호를 하나씩 민다.
 // 인물 카드 제목이 없으면 맨 끝에 붙인다.
 export function addSeedScene(text) {
+  if (text.includes(SEED_OLD[0][0])) return SEED_OLD.reduce((t, [a, b]) => t.replace(a, b), text);
   if (text.includes(SEED_HEAD)) return text;
   const at = text.search(/^## \d+\. 인물 카드/m);
   if (at < 0) return `${text.replace(/\s*$/, '\n\n')}${SEED_BLOCK.replace('## 2. ', '## ')}`;
@@ -298,7 +307,10 @@ export function buildPrompt({ concept, request, extra, work, episode, memo, past
     note.trim() && `[이번 화 설정]\n${note.trim()}`,
     `[본문]\n${text}`,
     '[답하는 방법]\n'
-      + (memo.includes(SEED_HEAD) ? `- 작품 설정의 '${SEED_HEAD}'은 작가가 이 작품을 떠올린 출발점이야. '나오는 때'가 오기 전에는 그 장면을 미리 쓰거나 당겨 오지 말고, 그 장면이 나올 때 힘이 실리도록 '그 전에 깔아 둘 것'을 조금씩 심어줘. 그 장면이 나오는 화라면 그 장면을 가장 공들여 써줘.\n` : '')
+      + (memo.includes(SEED_HEAD) || memo.includes(SEED_OLD[0][0]) ?`- 작품 설정의 '${SEED_HEAD}'는 작가가 생각날 때마다 모아 두는 장면 목록이야. 줄마다 '나오는 때'를 지켜줘. `
+        + `그때가 오기 전에는 그 장면을 미리 쓰거나 당겨 오지 말고, 그 장면에 힘이 실리도록 '그 전에 깔아 둘 것'을 조금씩 심어줘. `
+        + `'나오는 때'가 비어 있으면 이야기 흐름에 자연스럽게 맞는 화에 넣되, 억지로 끼우거나 한 화에 여러 개를 몰아넣지 마. `
+        + `'12화에 씀'처럼 이미 쓴 장면은 다시 쓰지 마. 목록의 장면이 나오는 화라면 그 장면을 가장 공들여 쓰고, 코드 블록 밖에 어떤 장면을 썼는지 짧게 알려줘.\n` : '')
       + '- 요청한 내용이 설정 메모나 지난 화 설정과 어긋나면, 답 맨 앞에 어느 설정과 어떻게 부딪히는지 먼저 짧게 알려줘. 원고는 이미 정해진 설정을 따라.\n'
       + '- 원고를 고쳐 달라는 요청이면 설명은 짧게 하고, 고친 회차 전체를 ```수정본 으로 시작하는 코드 블록 하나에 담아줘. 고치지 않은 문장도 빠짐없이 그대로 넣어줘.\n'
       + '- 이어 쓸 장면을 부탁하면 새로 쓴 부분만 ```이어쓰기 로 시작하는 코드 블록 하나에 담아줘.\n'
