@@ -150,6 +150,7 @@ async function showNovel(folderId) {
   const md = files.filter((f) => f.name.endsWith('.md'));
   const settings = md.find((f) => f.name === SETTINGS);
   const summaryFile = md.find((f) => f.name === SUMMARY);
+  const copies = md.filter((f) => isConflictCopy(f.name));
   const episodes = md.filter((f) => f !== settings && f !== summaryFile && !parseNoteName(f.name)).sort((x, y) =>
     (parseEpisodeName(x.name)?.num ?? Infinity) - (parseEpisodeName(y.name)?.num ?? Infinity) || x.name.replace(/\.md$/, '').localeCompare(y.name.replace(/\.md$/, ''), 'ko'));
   const row = (f) => {
@@ -157,7 +158,7 @@ async function showNovel(folderId) {
     return `<li><a href="#/e/${folderId}/${f.id}"><span class="no">${ep ? String(ep.num).padStart(3, '0') : ''}</span><span class="ep-title">${esc(ep ? ep.title : displayName(f.name))}</span><span class="date">${day(f.modifiedTime)}</span></a></li>`;
   };
   $app.innerHTML = `
-    <header class="page-head"><a href="#/" class="place">작품</a><h1>${esc(folder.name)}</h1><p class="head-tools">${EXPORT_BUTTONS}<button class="link" id="tidy-notes">회차 설정 한 번에 정리</button><button class="link open-settings">설정</button><button class="link danger" id="delete-work">작품 휴지통으로</button></p></header>
+    <header class="page-head"><a href="#/" class="place">작품</a><h1>${esc(folder.name)}</h1><p class="head-tools">${EXPORT_BUTTONS}<button class="link" id="tidy-notes">회차 설정 한 번에 정리</button>${copies.length ? `<button class="link danger" id="trash-copies">충돌 사본 ${copies.length}개 지우기</button>` : ''}<button class="link open-settings">설정</button><button class="link danger" id="delete-work">작품 휴지통으로</button></p></header>
     ${settings ? `<p class="memo"><a href="#/e/${folderId}/${settings.id}">설정 메모</a> 인물과 세계관을 적어 두는 곳</p>` : ''}
     <p class="memo"><a href="${summaryFile ? `#/e/${folderId}/${summaryFile.id}` : '#'}" id="summary-link">오래된 화 요약</a> 최근 10화보다 앞 화 설정을 Claude가 줄여 둔 것</p>
     <ol class="episodes">${episodes.map(row).join('') || '<li class="empty">아직 회차가 없어요. 첫 회차를 만들어 보세요.</li>'}</ol>
@@ -180,6 +181,13 @@ async function showNovel(folderId) {
       location.hash = `#/e/${folderId}/${f.id}`;
     } catch (e) { e.status === 401 ? needLogin() : alert(`요약 파일을 만들지 못했어요. ${e.message}`); }
   };
+  $app.querySelector('#trash-copies')?.addEventListener('click', async () => {
+    if (!confirm(`충돌 사본 ${copies.length}개를 드라이브 휴지통으로 옮길까요?\n${copies.map((f) => `· ${f.name.replace(/\.md$/, '')}`).join('\n')}\n\n원래 파일은 그대로 있어요. 30일 안에는 드라이브 휴지통에서 되살릴 수 있어요.`)) return;
+    try {
+      await Promise.all(copies.map((f) => drive.trash(f.id)));
+      showNovel(folderId);
+    } catch (e) { e.status === 401 ? needLogin() : alert(`사본을 옮기지 못했어요. ${e.message}`); }
+  });
   $app.querySelector('#tidy-notes').onclick = async (ev) => {
     const notes = md.filter((f) => parseNoteName(f.name));
     const have = new Set(notes.map((f) => parseNoteName(f.name)));
@@ -250,7 +258,7 @@ async function showEditor(folderId, fileId) {
           <a href="#/n/${folderId}" class="place">${esc(folder.name)}</a>
           <h1 id="title"></h1>
           <p class="status" id="status"></p>
-          <p class="tools">${isEpisode ? '<button id="rename" class="link">제목 바꾸기</button><button id="delete" class="link">휴지통으로</button>' + EXPORT_BUTTONS : ''}${isForm ? '<button id="raw" class="link">글자로 고치기</button>' : ''}<button class="link open-settings">설정</button></p>
+          <p class="tools">${isEpisode ? '<button id="rename" class="link">제목 바꾸기</button><button id="delete" class="link">휴지통으로</button>' + EXPORT_BUTTONS : isConflictCopy(meta.name) ? '<button id="delete" class="link">휴지통으로</button>' : ''}${isForm ? '<button id="raw" class="link">글자로 고치기</button>' : ''}<button class="link open-settings">설정</button></p>
           ${meta.name === SUMMARY ? '<p class="ai-tools"><button type="button" id="ask-summary">Claude에게 요약 부탁 복사</button></p><p class="quiet" id="summary-msg" aria-live="polite">새 화가 쌓이면 다시 눌러 주세요. 요약 안 된 화만 더해서 부탁해요.</p>' : ''}
           <p class="ai-tools"><button type="button" class="open-ask">Claude에게 묻기</button><button type="button" class="open-apply">수정본 반영</button></p>
           <p class="no" id="no"></p>
@@ -693,10 +701,12 @@ async function renameEpisode() {
 }
 
 async function deleteEpisode() {
-  if (!confirm(`"${displayName(editing.name)}" 회차를 드라이브 휴지통으로 옮길까요?\n(30일 안에 드라이브 휴지통에서 되살릴 수 있어요)`)) return;
+  const copy = isConflictCopy(editing.name);
+  if (!confirm(`"${displayName(editing.name)}" ${copy ? '충돌 사본' : '회차'}을 드라이브 휴지통으로 옮길까요?\n(30일 안에 드라이브 휴지통에서 되살릴 수 있어요)`)) return;
   try {
     await drive.trash(editing.fileId);
-    if (editing.noteId) await drive.trash(editing.noteId).catch(() => {}); // 짝인 설정 파일도 함께
+    // 사본을 지울 때는 원래 회차의 설정 파일을 건드리지 않는다
+    if (editing.noteId && !copy) await drive.trash(editing.noteId).catch(() => {}); // 짝인 설정 파일도 함께
     store.del(editing.fileId);
     const { folderId } = editing;
     editing = null;
