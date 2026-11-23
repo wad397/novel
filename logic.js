@@ -16,6 +16,26 @@ export const nextEpisodeNumber = (names) =>
 export const episodeNoteName = (num) => `${String(num).padStart(3, '0')} 설정.md`;
 export const parseNoteName = (name) => { const m = /^(\d+) 설정\.md$/.exec(name); return m ? Number(m[1]) : null; };
 
+const SEED_HEAD = '처음 떠올린 장면';
+const SEED_BLOCK = `## 2. ${SEED_HEAD}
+
+이 작품을 떠올리게 한 장면이에요. 꼭 첫 화일 필요는 없어요. 언제 나올지 적어 두면 AI가 그때까지 이 장면으로 이어지게 깔아 둬요.
+
+| 장면 | 나오는 때 (처음 / 중간 / 결말 / N화쯤) | 그 전에 깔아 둘 것 |
+|---|---|---|
+|  |  |  |
+`;
+
+// 예전 작품 설정에 "처음 떠올린 장면" 칸을 인물 카드 앞에 끼워 넣고 뒤 번호를 하나씩 민다.
+// 인물 카드 제목이 없으면 맨 끝에 붙인다.
+export function addSeedScene(text) {
+  if (text.includes(SEED_HEAD)) return text;
+  const at = text.search(/^## \d+\. 인물 카드/m);
+  if (at < 0) return `${text.replace(/\s*$/, '\n\n')}${SEED_BLOCK.replace('## 2. ', '## ')}`;
+  const rest = text.slice(at).replace(/^## (\d+)\. /gm, (_, n) => `## ${Number(n) + 1}. `);
+  return `${text.slice(0, at)}${SEED_BLOCK}\n${rest}`;
+}
+
 export const WORK_TEMPLATE = `# 작품 설정
 
 작품마다 한 번만 채워요. 빈칸은 비워 둬도 돼요.
@@ -33,7 +53,8 @@ export const WORK_TEMPLATE = `# 작품 설정
 | 시점 |  |
 | 피하고 싶은 것 |  |
 
-## 2. 인물 카드
+${SEED_BLOCK}
+## 3. 인물 카드
 
 이름이나 외모보다 말버릇과 고집이 더 중요해요.
 
@@ -41,11 +62,11 @@ export const WORK_TEMPLATE = `# 작품 설정
 |---|---|---|---|---|---|---|
 |  |  |  |  |  |  |  |
 
-## 3. 꼭 지켜야 할 설정
+## 4. 꼭 지켜야 할 설정
 
 -
 
-## 4. 앞으로의 끝 장면 메모
+## 5. 앞으로의 끝 장면 메모
 
 마지막 장면만 미리 정해 두면 그 화는 거기로 가기만 하면 돼요.
 
@@ -55,7 +76,7 @@ export const WORK_TEMPLATE = `# 작품 설정
 | 2 |  |
 | 3 |  |
 
-## 5. 받은 원고 피드백
+## 6. 받은 원고 피드백
 
 -
 `;
@@ -277,6 +298,7 @@ export function buildPrompt({ concept, request, extra, work, episode, memo, past
     note.trim() && `[이번 화 설정]\n${note.trim()}`,
     `[본문]\n${text}`,
     '[답하는 방법]\n'
+      + (memo.includes(SEED_HEAD) ? `- 작품 설정의 '${SEED_HEAD}'은 작가가 이 작품을 떠올린 출발점이야. '나오는 때'가 오기 전에는 그 장면을 미리 쓰거나 당겨 오지 말고, 그 장면이 나올 때 힘이 실리도록 '그 전에 깔아 둘 것'을 조금씩 심어줘. 그 장면이 나오는 화라면 그 장면을 가장 공들여 써줘.\n` : '')
       + '- 요청한 내용이 설정 메모나 지난 화 설정과 어긋나면, 답 맨 앞에 어느 설정과 어떻게 부딪히는지 먼저 짧게 알려줘. 원고는 이미 정해진 설정을 따라.\n'
       + '- 원고를 고쳐 달라는 요청이면 설명은 짧게 하고, 고친 회차 전체를 ```수정본 으로 시작하는 코드 블록 하나에 담아줘. 고치지 않은 문장도 빠짐없이 그대로 넣어줘.\n'
       + '- 이어 쓸 장면을 부탁하면 새로 쓴 부분만 ```이어쓰기 로 시작하는 코드 블록 하나에 담아줘.\n'

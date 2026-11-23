@@ -1,7 +1,7 @@
 import * as drive from './drive.js';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
-  episodeNoteName, parseNoteName, WORK_TEMPLATE, episodeTemplate, parseDoc, formatDoc, tidyNote, pastNotes, summaryPrompt,
+  episodeNoteName, parseNoteName, WORK_TEMPLATE, addSeedScene, episodeTemplate, parseDoc, formatDoc, tidyNote, pastNotes, summaryPrompt,
   countText, assist, diff, extractRevision, buildPrompt, isConflict, sanitizeTitle, isConflictCopy, exportText,
 } from './logic.js';
 
@@ -239,7 +239,8 @@ async function showEditor(folderId, fileId) {
   const noteFile = epNum ? siblings.find((f) => f.name === episodeNoteName(epNum)) : null;
   const [memo, note] = await Promise.all([memoFile, noteFile].map((f) => (f ? drive.readText(f.id) : null)));
   // 비어 있는 작품 설정을 열면 양식을 채워서 보여 준다. 고치기 전에는 저장하지 않는다.
-  let text = meta.name === SETTINGS && !remote ? WORK_TEMPLATE : remote, dirty = false;
+  // 예전 작품 설정에는 "처음 떠올린 장면" 칸을 끼워서 보여 준다. 이것도 고치기 전에는 저장하지 않는다.
+  let text = meta.name === SETTINGS ? (remote ? addSeedScene(remote) : WORK_TEMPLATE) : remote, dirty = false;
   const draft = store.get(fileId);
   if (draft && draft.text !== remote) {
     if (confirm(`이 기기에 저장되지 않은 글이 있어요 (${new Date(draft.at).toLocaleString()}).\n불러올까요? 취소하면 드라이브의 글을 엽니다.`)) {

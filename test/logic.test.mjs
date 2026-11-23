@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   episodeFileName, parseEpisodeName, nextEpisodeNumber, conflictFileName,
-  episodeNoteName, parseNoteName, episodeTemplate, WORK_TEMPLATE, parseDoc, formatDoc, tidyNote, pastNotes, summaryPrompt, summaryUpto, tableCells, isConflictCopy, exportText, countText, assist, diff, extractRevision, buildPrompt, isConflict, escapeQuery, sanitizeTitle,
+  episodeNoteName, parseNoteName, episodeTemplate, WORK_TEMPLATE, addSeedScene, parseDoc, formatDoc, tidyNote, pastNotes, summaryPrompt, summaryUpto, tableCells, isConflictCopy, exportText, countText, assist, diff, extractRevision, buildPrompt, isConflict, escapeQuery, sanitizeTitle,
 } from '../logic.js';
 
 test('회차 파일 이름', () => {
@@ -214,4 +214,18 @@ test('뒤 화까지 들어간 요약은 앞 화를 고칠 때 쓰지 않는다',
   const notes = Array.from({ length: 12 }, (_, i) => ({ num: i + 1, text: `- 설정${i + 1}\n` }));
   assert.doesNotMatch(pastNotes(notes, 10, '# 1~13화 요약\n- 미래'), /미래/);
   assert.match(pastNotes(notes, 10, '# 1~13화 요약\n- 미래'), /1화\n- 설정1/);
+});
+
+test('처음 떠올린 장면 칸', () => {
+  assert.match(WORK_TEMPLATE, /## 2\. 처음 떠올린 장면[\s\S]*## 3\. 인물 카드[\s\S]*## 6\. 받은 원고 피드백/);
+  assert.equal(addSeedScene(WORK_TEMPLATE), WORK_TEMPLATE); // 이미 있으면 그대로
+  // 예전 양식: 1~5번 → 장면 칸이 2번으로 들어가고 뒤가 하나씩 밀린다. 적어 둔 내용은 그대로.
+  const old = '# 작품 설정\n\n## 1. 작품 기본 정보\n\n| 항목 | 내용 |\n|---|---|\n| 가제 | 용사 |\n\n## 2. 인물 카드\n\n| 이름 | 역할 |\n|---|---|\n| 닉스 | 친구 |\n\n## 3. 꼭 지켜야 할 설정\n\n-프리나는 회귀함\n';
+  const up = addSeedScene(old);
+  assert.match(up, /\| 가제 \| 용사 \|\n\n## 2\. 처음 떠올린 장면\n[\s\S]*\| 장면 \| 나오는 때[\s\S]*\n\n## 3\. 인물 카드\n\n\| 이름 \| 역할 \|\n\|---\|---\|\n\| 닉스 \| 친구 \|\n\n## 4\. 꼭 지켜야 할 설정\n\n-프리나는 회귀함\n$/);
+  assert.match(addSeedScene('# 메모\n\n그냥 글'), /그냥 글\n\n## 처음 떠올린 장면\n/);
+  // AI에게: 칸이 있을 때만 "때가 오기 전에는 당겨 쓰지 마"를 알려 준다
+  const ask = (memo) => buildPrompt({ concept: '', request: 'r', extra: '', work: 'w', episode: 'e', memo, text: 't' });
+  assert.match(ask(WORK_TEMPLATE), /'처음 떠올린 장면'은 작가가 이 작품을 떠올린 출발점이야/);
+  assert.doesNotMatch(ask('그냥 메모'), /떠올린 장면/);
 });
